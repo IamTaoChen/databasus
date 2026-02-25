@@ -124,6 +124,7 @@ type EnvVariables struct {
 	SMTPPort     int    `env:"SMTP_PORT"`
 	SMTPUser     string `env:"SMTP_USER"`
 	SMTPPassword string `env:"SMTP_PASSWORD"`
+	SMTPFrom     string `env:"SMTP_FROM"`
 
 	// Application URL (optional) - used for email links
 	DatabasusURL string `env:"DATABASUS_URL"`
