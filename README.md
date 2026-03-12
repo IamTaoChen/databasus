@@ -261,12 +261,17 @@ Also you can join our large community of developers, DBAs and DevOps engineers o
 
 There have been questions about AI usage in project development in issues and discussions. As the project focuses on security, reliability and production usage, it's important to explain how AI is used in the development process.
 
+First of all, we are proud to say that Databasus has been accepted into both [Claude for Open Source](https://claude.com/contact-sales/claude-for-oss) by Anthropic and [Codex for Open Source](https://developers.openai.com/codex/community/codex-for-oss/) by OpenAI in March 2026. For us it is one more signal that the project was recognized as important open-source software and was as critical infrastructure worth supporting independently by two of the world's leading AI companies. Read more at [databasus.com/faq](https://databasus.com/faq#oss-programs).
+
+Despite of this, we have the following rules how AI is used in the development process:
+
 AI is used as a helper for:
 
 - verification of code quality and searching for vulnerabilities
 - cleaning up and improving documentation, comments and code
 - assistance during development
 - double-checking PRs and commits after human review
+- additional security analysis of PRs via Codex Security
 
 AI is not used for:
 
