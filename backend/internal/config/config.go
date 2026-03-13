@@ -29,7 +29,7 @@ type EnvVariables struct {
 	MongodbInstallDir    string            `env:"MONGODB_INSTALL_DIR"`
 
 	// Internal database
-	DatabaseDsn string `env:"DATABASE_DSN"    required:"true"`
+	DatabaseDsn string `env:"DATABASE_DSN" required:"true"`
 	// Internal Valkey
 	ValkeyHost     string `env:"VALKEY_HOST"     required:"true"`
 	ValkeyPort     string `env:"VALKEY_PORT"     required:"true"`
