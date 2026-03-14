@@ -21,6 +21,12 @@ const (
 )
 
 func Run(cfg *config.Config, log *slog.Logger) error {
+	lockFile, err := AcquireLock(log)
+	if err != nil {
+		return err
+	}
+	defer ReleaseLock(lockFile)
+
 	if err := validateConfig(cfg); err != nil {
 		return err
 	}
