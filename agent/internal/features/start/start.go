@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -25,6 +26,7 @@ import (
 const (
 	pgBasebackupVerifyTimeout = 10 * time.Second
 	dbVerifyTimeout           = 10 * time.Second
+	minPgMajorVersion         = 15
 )
 
 func Start(cfg *config.Config, log *slog.Logger) error {
@@ -205,11 +207,44 @@ func verifyDatabase(cfg *config.Config, log *slog.Logger) error {
 		)
 	}
 
+	var versionNumStr string
+	if err := conn.QueryRow(ctx, "SHOW server_version_num").Scan(&versionNumStr); err != nil {
+		return fmt.Errorf("failed to query PostgreSQL version: %w", err)
+	}
+
+	majorVersion, err := parsePgVersionNum(versionNumStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse PostgreSQL version '%s': %w", versionNumStr, err)
+	}
+
+	if majorVersion < minPgMajorVersion {
+		return fmt.Errorf(
+			"PostgreSQL %d is not supported, minimum required version is %d",
+			majorVersion, minPgMajorVersion,
+		)
+	}
+
 	log.Info("PostgreSQL connection verified",
 		"host", cfg.PgHost,
 		"port", cfg.PgPort,
 		"user", cfg.PgUser,
+		"version", majorVersion,
 	)
 
 	return nil
+}
+
+func parsePgVersionNum(versionNumStr string) (int, error) {
+	versionNum, err := strconv.Atoi(strings.TrimSpace(versionNumStr))
+	if err != nil {
+		return 0, fmt.Errorf("invalid version number: %w", err)
+	}
+
+	if versionNum <= 0 {
+		return 0, fmt.Errorf("invalid version number: %d", versionNum)
+	}
+
+	majorVersion := versionNum / 10000
+
+	return majorVersion, nil
 }
