@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"databasus-agent/internal/config"
+	"databasus-agent/internal/features/api"
 	"databasus-agent/internal/logger"
 )
 
@@ -39,8 +40,7 @@ func Test_UploadSegment_SingleSegment_ServerReceivesCorrectHeadersAndBody(t *tes
 	}))
 	defer server.Close()
 
-	cfg := createTestConfig(walDir, server.URL)
-	streamer := NewStreamer(cfg, logger.GetLogger())
+	streamer := newTestStreamer(walDir, server.URL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -78,8 +78,7 @@ func Test_UploadSegments_MultipleSegmentsOutOfOrder_UploadedInAscendingOrder(t *
 	}))
 	defer server.Close()
 
-	cfg := createTestConfig(walDir, server.URL)
-	streamer := NewStreamer(cfg, logger.GetLogger())
+	streamer := newTestStreamer(walDir, server.URL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -115,8 +114,7 @@ func Test_UploadSegments_DirectoryHasTmpFiles_TmpFilesIgnored(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := createTestConfig(walDir, server.URL)
-	streamer := NewStreamer(cfg, logger.GetLogger())
+	streamer := newTestStreamer(walDir, server.URL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -146,7 +144,8 @@ func Test_UploadSegment_DeleteEnabled_FileRemovedAfterUpload(t *testing.T) {
 	isDeleteEnabled := true
 	cfg := createTestConfig(walDir, server.URL)
 	cfg.IsDeleteWalAfterUpload = &isDeleteEnabled
-	streamer := NewStreamer(cfg, logger.GetLogger())
+	apiClient := api.NewClient(server.URL, cfg.Token, logger.GetLogger())
+	streamer := NewStreamer(cfg, apiClient, logger.GetLogger())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -173,7 +172,8 @@ func Test_UploadSegment_DeleteDisabled_FileKeptAfterUpload(t *testing.T) {
 	isDeleteDisabled := false
 	cfg := createTestConfig(walDir, server.URL)
 	cfg.IsDeleteWalAfterUpload = &isDeleteDisabled
-	streamer := NewStreamer(cfg, logger.GetLogger())
+	apiClient := api.NewClient(server.URL, cfg.Token, logger.GetLogger())
+	streamer := NewStreamer(cfg, apiClient, logger.GetLogger())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -198,8 +198,7 @@ func Test_UploadSegment_ServerReturns500_FileKeptInQueue(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := createTestConfig(walDir, server.URL)
-	streamer := NewStreamer(cfg, logger.GetLogger())
+	streamer := newTestStreamer(walDir, server.URL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -223,8 +222,7 @@ func Test_ProcessQueue_EmptyDirectory_NoUploads(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := createTestConfig(walDir, server.URL)
-	streamer := NewStreamer(cfg, logger.GetLogger())
+	streamer := newTestStreamer(walDir, server.URL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -239,8 +237,7 @@ func Test_ProcessQueue_EmptyDirectory_NoUploads(t *testing.T) {
 func Test_Run_ContextCancelled_StopsImmediately(t *testing.T) {
 	walDir := createTestWalDir(t)
 
-	cfg := createTestConfig(walDir, "http://localhost:0")
-	streamer := NewStreamer(cfg, logger.GetLogger())
+	streamer := newTestStreamer(walDir, "http://localhost:0")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -269,17 +266,16 @@ func Test_UploadSegment_ServerReturns409_FileNotDeleted(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 
-		resp := uploadErrorResponse{
-			Error:               "gap_detected",
-			ExpectedSegmentName: "000000010000000100000003",
-			ReceivedSegmentName: segmentName,
+		resp := map[string]string{
+			"error":               "gap_detected",
+			"expectedSegmentName": "000000010000000100000003",
+			"receivedSegmentName": segmentName,
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
-	cfg := createTestConfig(walDir, server.URL)
-	streamer := NewStreamer(cfg, logger.GetLogger())
+	streamer := newTestStreamer(walDir, server.URL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -290,6 +286,13 @@ func Test_UploadSegment_ServerReturns409_FileNotDeleted(t *testing.T) {
 
 	_, err := os.Stat(filepath.Join(walDir, segmentName))
 	assert.NoError(t, err, "segment file should not be deleted on gap detection")
+}
+
+func newTestStreamer(walDir, serverURL string) *Streamer {
+	cfg := createTestConfig(walDir, serverURL)
+	apiClient := api.NewClient(serverURL, cfg.Token, logger.GetLogger())
+
+	return NewStreamer(cfg, apiClient, logger.GetLogger())
 }
 
 func createTestWalDir(t *testing.T) string {

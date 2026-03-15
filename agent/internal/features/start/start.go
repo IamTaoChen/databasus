@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -16,6 +17,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"databasus-agent/internal/config"
+	"databasus-agent/internal/features/api"
+	full_backup "databasus-agent/internal/features/full_backup"
 	"databasus-agent/internal/features/wal"
 )
 
@@ -24,13 +27,7 @@ const (
 	dbVerifyTimeout           = 10 * time.Second
 )
 
-func Run(cfg *config.Config, log *slog.Logger) error {
-	lockFile, err := AcquireLock(log)
-	if err != nil {
-		return err
-	}
-	defer ReleaseLock(lockFile)
-
+func Start(cfg *config.Config, log *slog.Logger) error {
 	if err := validateConfig(cfg); err != nil {
 		return err
 	}
@@ -43,10 +40,36 @@ func Run(cfg *config.Config, log *slog.Logger) error {
 		return err
 	}
 
+	if runtime.GOOS == "windows" {
+		return RunDaemon(cfg, log)
+	}
+
+	pid, err := spawnDaemon(log)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Agent started in background (PID %d)\n", pid)
+
+	return nil
+}
+
+func RunDaemon(cfg *config.Config, log *slog.Logger) error {
+	lockFile, err := AcquireLock(log)
+	if err != nil {
+		return err
+	}
+	defer ReleaseLock(lockFile)
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	streamer := wal.NewStreamer(cfg, log)
+	apiClient := api.NewClient(cfg.DatabasusHost, cfg.Token, log)
+
+	fullBackuper := full_backup.NewFullBackuper(cfg, apiClient, log)
+	go fullBackuper.Run(ctx)
+
+	streamer := wal.NewStreamer(cfg, apiClient, log)
 	streamer.Run(ctx)
 
 	log.Info("Agent stopped")

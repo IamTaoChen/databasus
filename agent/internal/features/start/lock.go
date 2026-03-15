@@ -54,6 +54,16 @@ func ReleaseLock(f *os.File) {
 	_ = os.Remove(lockFileName)
 }
 
+func ReadLockFilePID() (int, error) {
+	f, err := os.Open(lockFileName)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	return readLockPID(f)
+}
+
 func writePID(f *os.File) error {
 	if err := f.Truncate(0); err != nil {
 		return fmt.Errorf("failed to truncate lock file: %w", err)

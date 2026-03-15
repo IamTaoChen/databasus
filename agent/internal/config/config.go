@@ -73,6 +73,11 @@ func (c *Config) SaveToJSON() error {
 	return os.WriteFile(configFileName, data, 0o644)
 }
 
+func (c *Config) LoadFromJSON() {
+	c.loadFromJSON()
+	c.applyDefaults()
+}
+
 func (c *Config) loadFromJSON() {
 	data, err := os.ReadFile(configFileName)
 	if err != nil {

@@ -2,11 +2,9 @@ package wal
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,33 +15,27 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"databasus-agent/internal/config"
+	"databasus-agent/internal/features/api"
 )
 
 const (
 	pollInterval  = 2 * time.Second
 	uploadTimeout = 5 * time.Minute
-	uploadPath    = "/api/v1/backups/postgres/wal/upload"
 )
 
 var segmentNameRegex = regexp.MustCompile(`^[0-9A-Fa-f]{24}$`)
 
 type Streamer struct {
-	cfg        *config.Config
-	httpClient *http.Client
-	log        *slog.Logger
+	cfg       *config.Config
+	apiClient *api.Client
+	log       *slog.Logger
 }
 
-type uploadErrorResponse struct {
-	Error               string `json:"error"`
-	ExpectedSegmentName string `json:"expectedSegmentName"`
-	ReceivedSegmentName string `json:"receivedSegmentName"`
-}
-
-func NewStreamer(cfg *config.Config, log *slog.Logger) *Streamer {
+func NewStreamer(cfg *config.Config, apiClient *api.Client, log *slog.Logger) *Streamer {
 	return &Streamer{
-		cfg:        cfg,
-		httpClient: &http.Client{},
-		log:        log,
+		cfg:       cfg,
+		apiClient: apiClient,
+		log:       log,
 	}
 }
 
@@ -129,58 +121,33 @@ func (s *Streamer) uploadSegment(ctx context.Context, segmentName string) error 
 	uploadCtx, cancel := context.WithTimeout(ctx, uploadTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(uploadCtx, http.MethodPost, s.buildUploadURL(), pr)
+	result, err := s.apiClient.UploadWalSegment(uploadCtx, segmentName, pr)
 	if err != nil {
-		_ = pr.Close()
-		return fmt.Errorf("create request: %w", err)
+		return err
 	}
 
-	req.Header.Set("Authorization", s.cfg.Token)
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("X-Upload-Type", "wal")
-	req.Header.Set("X-Wal-Segment-Name", segmentName)
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("upload request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch resp.StatusCode {
-	case http.StatusNoContent:
-		s.log.Debug("WAL segment uploaded", "segment", segmentName)
-
-		if *s.cfg.IsDeleteWalAfterUpload {
-			if err := os.Remove(filePath); err != nil {
-				s.log.Warn("Failed to delete uploaded WAL segment",
-					"segment", segmentName,
-					"error", err,
-				)
-			}
-		}
-
-		return nil
-
-	case http.StatusConflict:
-		var errResp uploadErrorResponse
-
-		if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil {
-			s.log.Warn("WAL chain gap detected",
-				"segment", segmentName,
-				"expected", errResp.ExpectedSegmentName,
-				"received", errResp.ReceivedSegmentName,
-			)
-		} else {
-			s.log.Warn("WAL chain gap detected", "segment", segmentName)
-		}
+	if result.IsGapDetected {
+		s.log.Warn("WAL chain gap detected",
+			"segment", segmentName,
+			"expected", result.ExpectedSegmentName,
+			"received", result.ReceivedSegmentName,
+		)
 
 		return fmt.Errorf("gap detected for segment %s", segmentName)
-
-	default:
-		body, _ := io.ReadAll(resp.Body)
-
-		return fmt.Errorf("upload failed with status %d: %s", resp.StatusCode, string(body))
 	}
+
+	s.log.Debug("WAL segment uploaded", "segment", segmentName)
+
+	if *s.cfg.IsDeleteWalAfterUpload {
+		if err := os.Remove(filePath); err != nil {
+			s.log.Warn("Failed to delete uploaded WAL segment",
+				"segment", segmentName,
+				"error", err,
+			)
+		}
+	}
+
+	return nil
 }
 
 func (s *Streamer) compressAndStream(pw *io.PipeWriter, filePath string) {
@@ -212,8 +179,4 @@ func (s *Streamer) compressAndStream(pw *io.PipeWriter, filePath string) {
 	}
 
 	_ = pw.Close()
-}
-
-func (s *Streamer) buildUploadURL() string {
-	return s.cfg.DatabasusHost + uploadPath
 }

@@ -2,30 +2,33 @@ package upgrade
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"syscall"
-	"time"
+
+	"databasus-agent/internal/features/api"
 )
 
-func CheckAndUpdate(databasusHost, currentVersion string, isDev bool, log *slog.Logger) error {
+// CheckAndUpdate ensures the agent binary matches the server's expected version.
+// It fetches the server version, downloads the new binary if different, verifies it,
+// replaces the current executable, and re-execs the process with the same arguments.
+// Skipped in development mode. Runs once on startup before the main agent loop.
+func CheckAndUpdate(apiClient *api.Client, currentVersion string, isDev bool, log *slog.Logger) error {
 	if isDev {
 		log.Info("Skipping update check (development mode)")
 		return nil
 	}
 
-	serverVersion, err := fetchServerVersion(databasusHost, log)
+	serverVersion, err := apiClient.FetchServerVersion(context.Background())
 	if err != nil {
+		log.Warn("Could not reach server for update check, continuing", "error", err)
+
 		return fmt.Errorf(
-			"unable to check version, please verify Databasus server is available at %s: %w",
-			databasusHost,
+			"unable to check version, please verify Databasus server is available: %w",
 			err,
 		)
 	}
@@ -48,7 +51,7 @@ func CheckAndUpdate(databasusHost, currentVersion string, isDev bool, log *slog.
 		_ = os.Remove(tempPath)
 	}()
 
-	if err := downloadBinary(databasusHost, tempPath); err != nil {
+	if err := apiClient.DownloadAgentBinary(context.Background(), runtime.GOARCH, tempPath); err != nil {
 		return fmt.Errorf("failed to download update: %w", err)
 	}
 
@@ -67,74 +70,6 @@ func CheckAndUpdate(databasusHost, currentVersion string, isDev bool, log *slog.
 	log.Info("Update complete, re-executing...")
 
 	return syscall.Exec(selfPath, os.Args, os.Environ())
-}
-
-func fetchServerVersion(host string, log *slog.Logger) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, host+"/api/v1/system/version", nil)
-	if err != nil {
-		return "", err
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Warn("Could not reach server for update check, continuing", "error", err)
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Warn(
-			"Server returned non-OK status for version check, continuing",
-			"status",
-			resp.StatusCode,
-		)
-		return "", fmt.Errorf("status %d", resp.StatusCode)
-	}
-
-	var ver versionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ver); err != nil {
-		log.Warn("Failed to parse server version response, continuing", "error", err)
-		return "", err
-	}
-
-	return ver.Version, nil
-}
-
-func downloadBinary(host, destPath string) error {
-	url := fmt.Sprintf("%s/api/v1/system/agent?arch=%s", host, runtime.GOARCH)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("server returned %d for agent download", resp.StatusCode)
-	}
-
-	f, err := os.Create(destPath)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-
-	_, err = io.Copy(f, resp.Body)
-
-	return err
 }
 
 func verifyBinary(binaryPath, expectedVersion string) error {
