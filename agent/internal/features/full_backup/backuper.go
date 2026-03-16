@@ -211,7 +211,7 @@ func (backuper *FullBackuper) executeAndUploadBasebackup(ctx context.Context) er
 
 func (backuper *FullBackuper) compressToBuffer(dst *bytes.Buffer, reader io.Reader) error {
 	encoder, err := zstd.NewWriter(dst,
-		zstd.WithEncoderLevel(zstd.SpeedDefault),
+		zstd.WithEncoderLevel(zstd.EncoderLevel(5)),
 		zstd.WithEncoderCRC(true),
 	)
 	if err != nil {
