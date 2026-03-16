@@ -26,15 +26,19 @@ import (
 const (
 	testChainValidPath     = "/api/v1/backups/postgres/wal/is-wal-chain-valid-since-last-full-backup"
 	testNextBackupTimePath = "/api/v1/backups/postgres/wal/next-full-backup-time"
-	testUploadPath         = "/api/v1/backups/postgres/wal/upload"
+	testFullStartPath      = "/api/v1/backups/postgres/wal/upload/full-start"
+	testFullCompletePath   = "/api/v1/backups/postgres/wal/upload/full-complete"
 	testReportErrorPath    = "/api/v1/backups/postgres/wal/error"
+
+	testBackupID = "test-backup-id-1234"
 )
 
 func Test_RunFullBackup_WhenChainBroken_BasebackupTriggered(t *testing.T) {
 	var mu sync.Mutex
 	var uploadReceived bool
 	var uploadHeaders http.Header
-	var uploadQuery string
+	var finalizeReceived bool
+	var finalizeBody map[string]any
 
 	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -44,15 +48,21 @@ func Test_RunFullBackup_WhenChainBroken_BasebackupTriggered(t *testing.T) {
 				Error:                 "wal_chain_broken",
 				LastContiguousSegment: "000000010000000100000011",
 			})
-		case testUploadPath:
+		case testFullStartPath:
 			mu.Lock()
 			uploadReceived = true
 			uploadHeaders = r.Header.Clone()
-			uploadQuery = r.URL.RawQuery
 			mu.Unlock()
 
 			_, _ = io.ReadAll(r.Body)
-			w.WriteHeader(http.StatusNoContent)
+			writeJSON(w, map[string]string{"backupId": testBackupID})
+		case testFullCompletePath:
+			mu.Lock()
+			finalizeReceived = true
+			_ = json.NewDecoder(r.Body).Decode(&finalizeBody)
+			mu.Unlock()
+
+			w.WriteHeader(http.StatusOK)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -68,7 +78,7 @@ func Test_RunFullBackup_WhenChainBroken_BasebackupTriggered(t *testing.T) {
 	waitForCondition(t, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
-		return uploadReceived
+		return finalizeReceived
 	}, 5*time.Second)
 	cancel()
 
@@ -76,16 +86,18 @@ func Test_RunFullBackup_WhenChainBroken_BasebackupTriggered(t *testing.T) {
 	defer mu.Unlock()
 
 	assert.True(t, uploadReceived)
-	assert.Equal(t, "basebackup", uploadHeaders.Get("X-Upload-Type"))
 	assert.Equal(t, "application/octet-stream", uploadHeaders.Get("Content-Type"))
 	assert.Equal(t, "test-token", uploadHeaders.Get("Authorization"))
-	assert.Contains(t, uploadQuery, "fullBackupWalStartSegment=000000010000000000000002")
-	assert.Contains(t, uploadQuery, "fullBackupWalStopSegment=000000010000000000000002")
+
+	assert.True(t, finalizeReceived)
+	assert.Equal(t, testBackupID, finalizeBody["backupId"])
+	assert.Equal(t, "000000010000000000000002", finalizeBody["startSegment"])
+	assert.Equal(t, "000000010000000000000002", finalizeBody["stopSegment"])
 }
 
 func Test_RunFullBackup_WhenScheduledBackupDue_BasebackupTriggered(t *testing.T) {
 	var mu sync.Mutex
-	var uploadReceived bool
+	var finalizeReceived bool
 
 	pastTime := time.Now().UTC().Add(-1 * time.Hour)
 
@@ -95,13 +107,15 @@ func Test_RunFullBackup_WhenScheduledBackupDue_BasebackupTriggered(t *testing.T)
 			writeJSON(w, api.WalChainValidityResponse{IsValid: true})
 		case testNextBackupTimePath:
 			writeJSON(w, api.NextFullBackupTimeResponse{NextFullBackupTime: &pastTime})
-		case testUploadPath:
+		case testFullStartPath:
+			_, _ = io.ReadAll(r.Body)
+			writeJSON(w, map[string]string{"backupId": testBackupID})
+		case testFullCompletePath:
 			mu.Lock()
-			uploadReceived = true
+			finalizeReceived = true
 			mu.Unlock()
 
-			_, _ = io.ReadAll(r.Body)
-			w.WriteHeader(http.StatusNoContent)
+			w.WriteHeader(http.StatusOK)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -117,19 +131,19 @@ func Test_RunFullBackup_WhenScheduledBackupDue_BasebackupTriggered(t *testing.T)
 	waitForCondition(t, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
-		return uploadReceived
+		return finalizeReceived
 	}, 5*time.Second)
 	cancel()
 
 	mu.Lock()
 	defer mu.Unlock()
 
-	assert.True(t, uploadReceived)
+	assert.True(t, finalizeReceived)
 }
 
 func Test_RunFullBackup_WhenNoFullBackupExists_ImmediateBasebackupTriggered(t *testing.T) {
 	var mu sync.Mutex
-	var uploadReceived bool
+	var finalizeReceived bool
 
 	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -138,13 +152,15 @@ func Test_RunFullBackup_WhenNoFullBackupExists_ImmediateBasebackupTriggered(t *t
 				IsValid: false,
 				Error:   "no_full_backup",
 			})
-		case testUploadPath:
+		case testFullStartPath:
+			_, _ = io.ReadAll(r.Body)
+			writeJSON(w, map[string]string{"backupId": testBackupID})
+		case testFullCompletePath:
 			mu.Lock()
-			uploadReceived = true
+			finalizeReceived = true
 			mu.Unlock()
 
-			_, _ = io.ReadAll(r.Body)
-			w.WriteHeader(http.StatusNoContent)
+			w.WriteHeader(http.StatusOK)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -160,14 +176,14 @@ func Test_RunFullBackup_WhenNoFullBackupExists_ImmediateBasebackupTriggered(t *t
 	waitForCondition(t, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
-		return uploadReceived
+		return finalizeReceived
 	}, 5*time.Second)
 	cancel()
 
 	mu.Lock()
 	defer mu.Unlock()
 
-	assert.True(t, uploadReceived)
+	assert.True(t, finalizeReceived)
 }
 
 func Test_RunFullBackup_WhenUploadFails_RetriesAfterDelay(t *testing.T) {
@@ -182,7 +198,7 @@ func Test_RunFullBackup_WhenUploadFails_RetriesAfterDelay(t *testing.T) {
 				IsValid: false,
 				Error:   "no_full_backup",
 			})
-		case testUploadPath:
+		case testFullStartPath:
 			_, _ = io.ReadAll(r.Body)
 
 			mu.Lock()
@@ -196,7 +212,9 @@ func Test_RunFullBackup_WhenUploadFails_RetriesAfterDelay(t *testing.T) {
 				return
 			}
 
-			w.WriteHeader(http.StatusNoContent)
+			writeJSON(w, map[string]string{"backupId": testBackupID})
+		case testFullCompletePath:
+			w.WriteHeader(http.StatusOK)
 		case testReportErrorPath:
 			mu.Lock()
 			errorReported = true
@@ -244,14 +262,16 @@ func Test_RunFullBackup_WhenAlreadyRunning_SkipsExecution(t *testing.T) {
 				IsValid: false,
 				Error:   "no_full_backup",
 			})
-		case testUploadPath:
+		case testFullStartPath:
 			_, _ = io.ReadAll(r.Body)
 
 			mu.Lock()
 			uploadCount++
 			mu.Unlock()
 
-			w.WriteHeader(http.StatusNoContent)
+			writeJSON(w, map[string]string{"backupId": testBackupID})
+		case testFullCompletePath:
+			w.WriteHeader(http.StatusOK)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -279,9 +299,11 @@ func Test_RunFullBackup_WhenContextCancelled_StopsCleanly(t *testing.T) {
 				IsValid: false,
 				Error:   "no_full_backup",
 			})
-		case testUploadPath:
+		case testFullStartPath:
 			_, _ = io.ReadAll(r.Body)
 			w.WriteHeader(http.StatusInternalServerError)
+		case testFullCompletePath:
+			w.WriteHeader(http.StatusOK)
 		case testReportErrorPath:
 			w.WriteHeader(http.StatusOK)
 		default:
@@ -323,11 +345,13 @@ func Test_RunFullBackup_WhenChainValidAndNotScheduled_NoBasebackupTriggered(t *t
 			writeJSON(w, api.WalChainValidityResponse{IsValid: true})
 		case testNextBackupTimePath:
 			writeJSON(w, api.NextFullBackupTimeResponse{NextFullBackupTime: &futureTime})
-		case testUploadPath:
+		case testFullStartPath:
 			uploadReceived.Store(true)
 
 			_, _ = io.ReadAll(r.Body)
-			w.WriteHeader(http.StatusNoContent)
+			writeJSON(w, map[string]string{"backupId": testBackupID})
+		case testFullCompletePath:
+			w.WriteHeader(http.StatusOK)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -346,10 +370,11 @@ func Test_RunFullBackup_WhenChainValidAndNotScheduled_NoBasebackupTriggered(t *t
 	assert.False(t, uploadReceived.Load(), "should not trigger backup when chain valid and not scheduled")
 }
 
-func Test_RunFullBackup_WhenStderrParsingFails_ReportsErrorAndRetries(t *testing.T) {
+func Test_RunFullBackup_WhenStderrParsingFails_FinalizesWithErrorAndRetries(t *testing.T) {
 	var mu sync.Mutex
 	var errorReported bool
-	var uploadAttempts int
+	var finalizeWithErrorReceived bool
+	var finalizeBody map[string]interface{}
 
 	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -358,13 +383,16 @@ func Test_RunFullBackup_WhenStderrParsingFails_ReportsErrorAndRetries(t *testing
 				IsValid: false,
 				Error:   "no_full_backup",
 			})
-		case testUploadPath:
+		case testFullStartPath:
+			_, _ = io.ReadAll(r.Body)
+			writeJSON(w, map[string]string{"backupId": testBackupID})
+		case testFullCompletePath:
 			mu.Lock()
-			uploadAttempts++
+			finalizeWithErrorReceived = true
+			_ = json.NewDecoder(r.Body).Decode(&finalizeBody)
 			mu.Unlock()
 
-			_, _ = io.ReadAll(r.Body)
-			w.WriteHeader(http.StatusNoContent)
+			w.WriteHeader(http.StatusOK)
 		case testReportErrorPath:
 			mu.Lock()
 			errorReported = true
@@ -398,12 +426,14 @@ func Test_RunFullBackup_WhenStderrParsingFails_ReportsErrorAndRetries(t *testing
 	defer mu.Unlock()
 
 	assert.True(t, errorReported)
-	assert.Equal(t, 0, uploadAttempts, "should not upload when stderr parsing fails")
+	assert.True(t, finalizeWithErrorReceived, "should finalize with error when stderr parsing fails")
+	assert.Equal(t, testBackupID, finalizeBody["backupId"])
+	assert.NotNil(t, finalizeBody["error"], "finalize should include error message")
 }
 
 func Test_RunFullBackup_WhenNextBackupTimeNull_BasebackupTriggered(t *testing.T) {
 	var mu sync.Mutex
-	var uploadReceived bool
+	var finalizeReceived bool
 
 	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -411,13 +441,15 @@ func Test_RunFullBackup_WhenNextBackupTimeNull_BasebackupTriggered(t *testing.T)
 			writeJSON(w, api.WalChainValidityResponse{IsValid: true})
 		case testNextBackupTimePath:
 			writeJSON(w, api.NextFullBackupTimeResponse{NextFullBackupTime: nil})
-		case testUploadPath:
+		case testFullStartPath:
+			_, _ = io.ReadAll(r.Body)
+			writeJSON(w, map[string]string{"backupId": testBackupID})
+		case testFullCompletePath:
 			mu.Lock()
-			uploadReceived = true
+			finalizeReceived = true
 			mu.Unlock()
 
-			_, _ = io.ReadAll(r.Body)
-			w.WriteHeader(http.StatusNoContent)
+			w.WriteHeader(http.StatusOK)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -433,14 +465,14 @@ func Test_RunFullBackup_WhenNextBackupTimeNull_BasebackupTriggered(t *testing.T)
 	waitForCondition(t, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
-		return uploadReceived
+		return finalizeReceived
 	}, 5*time.Second)
 	cancel()
 
 	mu.Lock()
 	defer mu.Unlock()
 
-	assert.True(t, uploadReceived)
+	assert.True(t, finalizeReceived)
 }
 
 func Test_RunFullBackup_WhenUploadSucceeds_BodyIsZstdCompressed(t *testing.T) {
@@ -454,14 +486,16 @@ func Test_RunFullBackup_WhenUploadSucceeds_BodyIsZstdCompressed(t *testing.T) {
 				IsValid: false,
 				Error:   "no_full_backup",
 			})
-		case testUploadPath:
+		case testFullStartPath:
 			body, _ := io.ReadAll(r.Body)
 
 			mu.Lock()
 			receivedBody = body
 			mu.Unlock()
 
-			w.WriteHeader(http.StatusNoContent)
+			writeJSON(w, map[string]string{"backupId": testBackupID})
+		case testFullCompletePath:
+			w.WriteHeader(http.StatusOK)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

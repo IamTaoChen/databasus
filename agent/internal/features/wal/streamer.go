@@ -159,7 +159,7 @@ func (s *Streamer) compressAndStream(pw *io.PipeWriter, filePath string) {
 	defer func() { _ = f.Close() }()
 
 	encoder, err := zstd.NewWriter(pw,
-		zstd.WithEncoderLevel(zstd.EncoderLevel(5)),
+		zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(5)),
 		zstd.WithEncoderCRC(true),
 	)
 	if err != nil {

@@ -43,7 +43,8 @@ type Backup struct {
 	PgVersion                       *string          `json:"pgVersion"                       gorm:"column:pg_version;type:text"`
 	PgWalSegmentName                *string          `json:"pgWalSegmentName"                gorm:"column:pg_wal_segment_name;type:text"`
 
-	CreatedAt time.Time `json:"createdAt" gorm:"column:created_at"`
+	UploadCompletedAt *time.Time `json:"uploadCompletedAt" gorm:"column:upload_completed_at"`
+	CreatedAt         time.Time  `json:"createdAt"         gorm:"column:created_at"`
 }
 
 func (b *Backup) GenerateFilename(dbName string) {

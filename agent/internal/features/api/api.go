@@ -16,7 +16,9 @@ import (
 const (
 	chainValidPath     = "/api/v1/backups/postgres/wal/is-wal-chain-valid-since-last-full-backup"
 	nextBackupTimePath = "/api/v1/backups/postgres/wal/next-full-backup-time"
-	uploadPath         = "/api/v1/backups/postgres/wal/upload"
+	walUploadPath      = "/api/v1/backups/postgres/wal/upload/wal"
+	fullStartPath      = "/api/v1/backups/postgres/wal/upload/full-start"
+	fullCompletePath   = "/api/v1/backups/postgres/wal/upload/full-complete"
 	reportErrorPath    = "/api/v1/backups/postgres/wal/error"
 	versionPath        = "/api/v1/system/version"
 	agentBinaryPath    = "/api/v1/system/agent"
@@ -102,30 +104,76 @@ func (c *Client) ReportBackupError(ctx context.Context, errMsg string) error {
 
 func (c *Client) UploadBasebackup(
 	ctx context.Context,
-	startSegment string,
-	stopSegment string,
 	body io.Reader,
-) error {
-	url := fmt.Sprintf("%s?fullBackupWalStartSegment=%s&fullBackupWalStopSegment=%s",
-		c.buildURL(uploadPath), startSegment, stopSegment,
-	)
-
+) (*UploadBasebackupResponse, error) {
 	resp, err := c.stream.R().
 		SetContext(ctx).
 		SetBody(body).
 		SetHeader("Content-Type", "application/octet-stream").
-		SetHeader("X-Upload-Type", "basebackup").
 		SetDoNotParseResponse(true).
-		Post(url)
+		Post(c.buildURL(fullStartPath))
 	if err != nil {
-		return fmt.Errorf("upload request: %w", err)
+		return nil, fmt.Errorf("upload request: %w", err)
 	}
 	defer func() { _ = resp.RawBody().Close() }()
 
-	if resp.StatusCode() != http.StatusNoContent {
+	if resp.StatusCode() != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.RawBody())
 
-		return fmt.Errorf("upload failed with status %d: %s", resp.StatusCode(), string(respBody))
+		return nil, fmt.Errorf("upload failed with status %d: %s", resp.StatusCode(), string(respBody))
+	}
+
+	var result UploadBasebackupResponse
+	if err := json.NewDecoder(resp.RawBody()).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode upload response: %w", err)
+	}
+
+	return &result, nil
+}
+
+func (c *Client) FinalizeBasebackup(
+	ctx context.Context,
+	backupID string,
+	startSegment string,
+	stopSegment string,
+) error {
+	resp, err := c.json.R().
+		SetContext(ctx).
+		SetBody(finalizeBasebackupRequest{
+			BackupID:     backupID,
+			StartSegment: startSegment,
+			StopSegment:  stopSegment,
+		}).
+		Post(c.buildURL(fullCompletePath))
+	if err != nil {
+		return fmt.Errorf("finalize request: %w", err)
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("finalize failed with status %d: %s", resp.StatusCode(), resp.String())
+	}
+
+	return nil
+}
+
+func (c *Client) FinalizeBasebackupWithError(
+	ctx context.Context,
+	backupID string,
+	errMsg string,
+) error {
+	resp, err := c.json.R().
+		SetContext(ctx).
+		SetBody(finalizeBasebackupRequest{
+			BackupID: backupID,
+			Error:    &errMsg,
+		}).
+		Post(c.buildURL(fullCompletePath))
+	if err != nil {
+		return fmt.Errorf("finalize-with-error request: %w", err)
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("finalize-with-error failed with status %d: %s", resp.StatusCode(), resp.String())
 	}
 
 	return nil
@@ -140,10 +188,9 @@ func (c *Client) UploadWalSegment(
 		SetContext(ctx).
 		SetBody(body).
 		SetHeader("Content-Type", "application/octet-stream").
-		SetHeader("X-Upload-Type", "wal").
 		SetHeader("X-Wal-Segment-Name", segmentName).
 		SetDoNotParseResponse(true).
-		Post(c.buildURL(uploadPath))
+		Post(c.buildURL(walUploadPath))
 	if err != nil {
 		return nil, fmt.Errorf("upload request: %w", err)
 	}

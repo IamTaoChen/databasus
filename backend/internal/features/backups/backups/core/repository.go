@@ -349,6 +349,24 @@ func (r *BackupRepository) FindWalSegmentByName(
 	return &backup, nil
 }
 
+func (r *BackupRepository) FindStaleUploadedBasebackups(olderThan time.Time) ([]*Backup, error) {
+	var backups []*Backup
+
+	err := storage.
+		GetDb().
+		Where(
+			"status = ? AND upload_completed_at IS NOT NULL AND upload_completed_at < ?",
+			BackupStatusInProgress,
+			olderThan,
+		).
+		Find(&backups).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return backups, nil
+}
+
 func (r *BackupRepository) FindLastWalSegmentAfter(
 	databaseID uuid.UUID,
 	afterSegmentName string,

@@ -59,6 +59,10 @@ func (c *BackupCleaner) Run(ctx context.Context) {
 				if err := c.cleanExceededBackups(); err != nil {
 					c.logger.Error("Failed to clean exceeded backups", "error", err)
 				}
+
+				if err := c.cleanStaleUploadedBasebackups(); err != nil {
+					c.logger.Error("Failed to clean stale uploaded basebackups", "error", err)
+				}
 			}
 		}
 	})
@@ -98,6 +102,38 @@ func (c *BackupCleaner) DeleteBackup(backup *backups_core.Backup) error {
 
 func (c *BackupCleaner) AddBackupRemoveListener(listener backups_core.BackupRemoveListener) {
 	c.backupRemoveListeners = append(c.backupRemoveListeners, listener)
+}
+
+func (c *BackupCleaner) cleanStaleUploadedBasebackups() error {
+	staleBackups, err := c.backupRepository.FindStaleUploadedBasebackups(
+		time.Now().UTC().Add(-10 * time.Minute),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to find stale uploaded basebackups: %w", err)
+	}
+
+	for _, backup := range staleBackups {
+		failMsg := "basebackup finalization timed out after 10 minutes"
+		backup.Status = backups_core.BackupStatusFailed
+		backup.FailMessage = &failMsg
+
+		if err := c.backupRepository.Save(backup); err != nil {
+			c.logger.Error(
+				"Failed to mark stale uploaded basebackup as failed",
+				"backupId", backup.ID,
+				"error", err,
+			)
+			continue
+		}
+
+		c.logger.Info(
+			"Marked stale uploaded basebackup as failed",
+			"backupId", backup.ID,
+			"databaseId", backup.DatabaseID,
+		)
+	}
+
+	return nil
 }
 
 func (c *BackupCleaner) cleanByRetentionPolicy() error {

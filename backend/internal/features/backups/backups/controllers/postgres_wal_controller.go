@@ -7,7 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_dto "databasus-backend/internal/features/backups/backups/dto"
 	backups_services "databasus-backend/internal/features/backups/backups/services"
 	"databasus-backend/internal/features/databases"
@@ -26,7 +25,9 @@ func (c *PostgreWalBackupController) RegisterRoutes(router *gin.RouterGroup) {
 	walRoutes.GET("/next-full-backup-time", c.GetNextFullBackupTime)
 	walRoutes.GET("/is-wal-chain-valid-since-last-full-backup", c.IsWalChainValidSinceLastBackup)
 	walRoutes.POST("/error", c.ReportError)
-	walRoutes.POST("/upload", c.Upload)
+	walRoutes.POST("/upload/wal", c.UploadWalSegment)
+	walRoutes.POST("/upload/full-start", c.StartFullBackupUpload)
+	walRoutes.POST("/upload/full-complete", c.CompleteFullBackupUpload)
 	walRoutes.GET("/restore/plan", c.GetRestorePlan)
 	walRoutes.GET("/restore/download", c.DownloadBackupFile)
 }
@@ -117,73 +118,39 @@ func (c *PostgreWalBackupController) IsWalChainValidSinceLastBackup(ctx *gin.Con
 	ctx.JSON(http.StatusOK, response)
 }
 
-// Upload
-// @Summary Stream upload a basebackup or WAL segment
-// @Description Accepts a zstd-compressed binary stream and stores it in the database's configured storage.
-// The server generates the storage filename; agents do not control the destination path.
-// WAL segments are accepted unconditionally
+// UploadWalSegment
+// @Summary Stream upload a WAL segment
+// @Description Accepts a zstd-compressed WAL segment binary stream and stores it in the database's configured storage.
+// WAL segments are accepted unconditionally.
 // @Tags backups-wal
 // @Accept application/octet-stream
-// @Produce json
 // @Security AgentToken
-// @Param X-Upload-Type header string true "Upload type" Enums(basebackup, wal)
-// @Param X-Wal-Segment-Name header string false "24-hex WAL segment identifier (required for wal uploads, e.g. 0000000100000001000000AB)"
-// @Param fullBackupWalStartSegment query string false "First WAL segment needed to make the basebackup consistent (required for basebackup uploads)"
-// @Param fullBackupWalStopSegment query string false "Last WAL segment included in the basebackup (required for basebackup uploads)"
+// @Param X-Wal-Segment-Name header string true "24-hex WAL segment identifier (e.g. 0000000100000001000000AB)"
 // @Success 204
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Router /backups/postgres/wal/upload [post]
-func (c *PostgreWalBackupController) Upload(ctx *gin.Context) {
+// @Router /backups/postgres/wal/upload/wal [post]
+func (c *PostgreWalBackupController) UploadWalSegment(ctx *gin.Context) {
 	database, err := c.getDatabase(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "invalid agent token"})
 		return
 	}
 
-	uploadType := backups_core.PgWalUploadType(ctx.GetHeader("X-Upload-Type"))
-	if uploadType != backups_core.PgWalUploadTypeBasebackup &&
-		uploadType != backups_core.PgWalUploadTypeWal {
+	walSegmentName := ctx.GetHeader("X-Wal-Segment-Name")
+	if walSegmentName == "" {
 		ctx.JSON(
 			http.StatusBadRequest,
-			gin.H{"error": "X-Upload-Type must be 'basebackup' or 'wal'"},
+			gin.H{"error": "X-Wal-Segment-Name is required for wal uploads"},
 		)
 		return
 	}
 
-	walSegmentName := ""
-	if uploadType == backups_core.PgWalUploadTypeWal {
-		walSegmentName = ctx.GetHeader("X-Wal-Segment-Name")
-		if walSegmentName == "" {
-			ctx.JSON(
-				http.StatusBadRequest,
-				gin.H{"error": "X-Wal-Segment-Name is required for wal uploads"},
-			)
-			return
-		}
-	}
-
-	if uploadType == backups_core.PgWalUploadTypeBasebackup {
-		if ctx.Query("fullBackupWalStartSegment") == "" ||
-			ctx.Query("fullBackupWalStopSegment") == "" {
-			ctx.JSON(
-				http.StatusBadRequest,
-				gin.H{
-					"error": "fullBackupWalStartSegment and fullBackupWalStopSegment are required for basebackup uploads",
-				},
-			)
-			return
-		}
-	}
-
-	uploadErr := c.walService.UploadWal(
+	uploadErr := c.walService.UploadWalSegment(
 		ctx.Request.Context(),
 		database,
-		uploadType,
 		walSegmentName,
-		ctx.Query("fullBackupWalStartSegment"),
-		ctx.Query("fullBackupWalStopSegment"),
 		ctx.Request.Body,
 	)
 
@@ -193,6 +160,80 @@ func (c *PostgreWalBackupController) Upload(ctx *gin.Context) {
 	}
 
 	ctx.Status(http.StatusNoContent)
+}
+
+// StartFullBackupUpload
+// @Summary Stream upload a full basebackup (Phase 1)
+// @Description Accepts a zstd-compressed basebackup binary stream and stores it in the database's configured storage.
+// Returns a backupId that must be completed via /upload/full-complete with WAL segment names.
+// @Tags backups-wal
+// @Accept application/octet-stream
+// @Produce json
+// @Security AgentToken
+// @Success 200 {object} backups_dto.UploadBasebackupResponse
+// @Failure 401 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /backups/postgres/wal/upload/full-start [post]
+func (c *PostgreWalBackupController) StartFullBackupUpload(ctx *gin.Context) {
+	database, err := c.getDatabase(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "invalid agent token"})
+		return
+	}
+
+	backupID, uploadErr := c.walService.UploadBasebackup(
+		ctx.Request.Context(),
+		database,
+		ctx.Request.Body,
+	)
+
+	if uploadErr != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": uploadErr.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, backups_dto.UploadBasebackupResponse{
+		BackupID: backupID,
+	})
+}
+
+// CompleteFullBackupUpload
+// @Summary Complete a previously uploaded basebackup (Phase 2)
+// @Description Sets WAL segment names and marks the basebackup as completed, or marks it as failed if an error is provided.
+// @Tags backups-wal
+// @Accept json
+// @Security AgentToken
+// @Param request body backups_dto.FinalizeBasebackupRequest true "Completion details"
+// @Success 200
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /backups/postgres/wal/upload/full-complete [post]
+func (c *PostgreWalBackupController) CompleteFullBackupUpload(ctx *gin.Context) {
+	database, err := c.getDatabase(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "invalid agent token"})
+		return
+	}
+
+	var request backups_dto.FinalizeBasebackupRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := c.walService.FinalizeBasebackup(
+		database,
+		request.BackupID,
+		request.StartSegment,
+		request.StopSegment,
+		request.Error,
+	); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.Status(http.StatusOK)
 }
 
 // GetRestorePlan

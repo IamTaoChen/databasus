@@ -26,6 +26,17 @@ type versionResponse struct {
 	Version string `json:"version"`
 }
 
+type UploadBasebackupResponse struct {
+	BackupID string `json:"backupId"`
+}
+
+type finalizeBasebackupRequest struct {
+	BackupID     string  `json:"backupId"`
+	StartSegment string  `json:"startSegment"`
+	StopSegment  string  `json:"stopSegment"`
+	Error        *string `json:"error,omitempty"`
+}
+
 type uploadErrorResponse struct {
 	Error               string `json:"error"`
 	ExpectedSegmentName string `json:"expectedSegmentName"`

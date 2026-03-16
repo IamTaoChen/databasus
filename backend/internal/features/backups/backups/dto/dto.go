@@ -77,3 +77,14 @@ type GetRestorePlanResponse struct {
 	TotalSizeBytes         int64                   `json:"totalSizeBytes"`
 	LatestAvailableSegment string                  `json:"latestAvailableSegment"`
 }
+
+type UploadBasebackupResponse struct {
+	BackupID uuid.UUID `json:"backupId"`
+}
+
+type FinalizeBasebackupRequest struct {
+	BackupID     uuid.UUID `json:"backupId"     binding:"required"`
+	StartSegment string    `json:"startSegment" binding:"required"`
+	StopSegment  string    `json:"stopSegment"  binding:"required"`
+	Error        *string   `json:"error"`
+}

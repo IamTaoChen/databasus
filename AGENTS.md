@@ -73,6 +73,10 @@ This is NOT a strict set of rules, but a set of recommendations to help you writ
    - Patch the answer accordingly
    - Verify edge cases are handled
 
+7. **Fix the reason, not the symptom:**
+   - If you find a bug or issue, ask "Why did this happen?" and fix the root cause
+   - Avoid quick fixes that don't address underlying problems
+
 ### Application guidelines:
 
 **Scale your response to the task:**
@@ -87,6 +91,36 @@ This is NOT a strict set of rules, but a set of recommendations to help you writ
 ---
 
 ## Backend guidelines
+
+### Naming
+
+Variables and functions naming are the most important part of code readability. Always choose descriptive and meaningful names that clearly indicate the purpose and intent of the code.
+
+Avoid abbreviations, unless they are widely accepted and unambiguous (e.g., `ID`, `URL`, `HTTP`). Use consistent naming conventions across the codebase.
+
+Do not use one-two letters. For example:
+
+Bad:
+
+```
+    u := users.getUser()
+
+	pr, pw := io.Pipe()
+
+    r := bufio.NewReader(pr)
+```
+
+Good:
+
+```
+    user := users.GetUser()
+
+    pipeReader, pipeWriter := io.Pipe()
+
+    bufferedReader := bufio.NewReader(pipeReader)
+```
+
+Exclusion: widely used variables like "db", "ctx", "req", "res", etc.
 
 ### Code style
 

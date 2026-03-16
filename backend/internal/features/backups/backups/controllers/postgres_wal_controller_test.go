@@ -38,7 +38,7 @@ func Test_WalUpload_InProgressStatusSetBeforeStream(t *testing.T) {
 	uploadBasebackup(t, router, agentToken, "000000010000000100000001", "000000010000000100000010")
 
 	pr, pw := io.Pipe()
-	req := newWalUploadRequest(pr, agentToken, "wal", "000000010000000100000011", "", "")
+	req := newWalSegmentUploadRequest(pr, agentToken, "000000010000000100000011")
 
 	w := httptest.NewRecorder()
 	done := make(chan struct{})
@@ -67,7 +67,7 @@ func Test_WalUpload_CompletedStatusAfterSuccessfulStream(t *testing.T) {
 	uploadBasebackup(t, router, agentToken, "000000010000000100000001", "000000010000000100000010")
 
 	body := bytes.NewReader([]byte("wal segment content"))
-	req := newWalUploadRequest(body, agentToken, "wal", "000000010000000100000011", "", "")
+	req := newWalSegmentUploadRequest(body, agentToken, "000000010000000100000011")
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -99,7 +99,7 @@ func Test_WalUpload_FailedStatusWithErrorOnStreamError(t *testing.T) {
 	uploadBasebackup(t, router, agentToken, "000000010000000100000001", "000000010000000100000010")
 
 	pr, pw := io.Pipe()
-	req := newWalUploadRequest(pr, agentToken, "wal", "000000010000000100000011", "", "")
+	req := newWalSegmentUploadRequest(pr, agentToken, "000000010000000100000011")
 
 	w := httptest.NewRecorder()
 	done := make(chan struct{})
@@ -129,17 +129,141 @@ func Test_WalUpload_FailedStatusWithErrorOnStreamError(t *testing.T) {
 	assert.NotNil(t, walBackup.FailMessage)
 }
 
-func Test_WalUpload_Basebackup_MissingWalSegments_Returns400(t *testing.T) {
+func Test_WalUpload_Basebackup_StreamingUpload_Returns200WithBackupId(t *testing.T) {
 	router, db, storage, agentToken, _ := createWalTestSetup(t)
 	defer removeWalTestSetup(db, storage)
 
 	body := bytes.NewReader([]byte("basebackup content"))
-	req := newWalUploadRequest(body, agentToken, backups_core.PgWalUploadTypeBasebackup, "", "", "")
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/backups/postgres/wal/upload/full-start", body)
+	req.Header.Set("Authorization", agentToken)
+	req.Header.Set("Content-Type", "application/octet-stream")
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
 
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var response backups_dto.UploadBasebackupResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	assert.NotEqual(t, uuid.Nil, response.BackupID)
+
+	backup, err := backups_core.GetBackupRepository().FindByID(response.BackupID)
+	require.NoError(t, err)
+	assert.Equal(t, backups_core.BackupStatusInProgress, backup.Status)
+	assert.NotNil(t, backup.UploadCompletedAt)
+}
+
+func Test_FinalizeBasebackup_ValidSegments_MarksCompleted(t *testing.T) {
+	router, db, storage, agentToken, _ := createWalTestSetup(t)
+	defer removeWalTestSetup(db, storage)
+
+	backupID := uploadBasebackupPhase1(t, router, agentToken)
+
+	completeFullBackupUpload(t, router, agentToken, backupID,
+		"000000010000000100000001", "000000010000000100000010", nil)
+
+	backup, err := backups_core.GetBackupRepository().FindByID(backupID)
+	require.NoError(t, err)
+	assert.Equal(t, backups_core.BackupStatusCompleted, backup.Status)
+	require.NotNil(t, backup.PgFullBackupWalStartSegmentName)
+	assert.Equal(t, "000000010000000100000001", *backup.PgFullBackupWalStartSegmentName)
+	require.NotNil(t, backup.PgFullBackupWalStopSegmentName)
+	assert.Equal(t, "000000010000000100000010", *backup.PgFullBackupWalStopSegmentName)
+}
+
+func Test_FinalizeBasebackup_WithError_MarksFailed(t *testing.T) {
+	router, db, storage, agentToken, _ := createWalTestSetup(t)
+	defer removeWalTestSetup(db, storage)
+
+	backupID := uploadBasebackupPhase1(t, router, agentToken)
+
+	errMsg := "pg_basebackup stderr parse failed"
+	completeFullBackupUpload(t, router, agentToken, backupID, "", "", &errMsg)
+
+	backup, err := backups_core.GetBackupRepository().FindByID(backupID)
+	require.NoError(t, err)
+	assert.Equal(t, backups_core.BackupStatusFailed, backup.Status)
+	require.NotNil(t, backup.FailMessage)
+	assert.Equal(t, errMsg, *backup.FailMessage)
+}
+
+func Test_FinalizeBasebackup_InvalidBackupId_Returns400(t *testing.T) {
+	router, db, storage, agentToken, _ := createWalTestSetup(t)
+	defer removeWalTestSetup(db, storage)
+
+	nonExistentID := uuid.New()
+	body, _ := json.Marshal(backups_dto.FinalizeBasebackupRequest{
+		BackupID:     nonExistentID,
+		StartSegment: "000000010000000100000001",
+		StopSegment:  "000000010000000100000010",
+	})
+
+	req, _ := http.NewRequest(
+		http.MethodPost,
+		"/api/v1/backups/postgres/wal/upload/full-complete",
+		bytes.NewReader(body),
+	)
+	req.Header.Set("Authorization", agentToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func Test_FinalizeBasebackup_AlreadyCompleted_Returns400(t *testing.T) {
+	router, db, storage, agentToken, _ := createWalTestSetup(t)
+	defer removeWalTestSetup(db, storage)
+
+	backupID := uploadBasebackupPhase1(t, router, agentToken)
+
+	completeFullBackupUpload(t, router, agentToken, backupID,
+		"000000010000000100000001", "000000010000000100000010", nil)
+
+	// Second finalize should fail.
+	body, _ := json.Marshal(backups_dto.FinalizeBasebackupRequest{
+		BackupID:     backupID,
+		StartSegment: "000000010000000100000001",
+		StopSegment:  "000000010000000100000010",
+	})
+
+	req, _ := http.NewRequest(
+		http.MethodPost,
+		"/api/v1/backups/postgres/wal/upload/full-complete",
+		bytes.NewReader(body),
+	)
+	req.Header.Set("Authorization", agentToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func Test_FinalizeBasebackup_InvalidToken_Returns401(t *testing.T) {
+	router, db, storage, _, _ := createWalTestSetup(t)
+	defer removeWalTestSetup(db, storage)
+
+	body, _ := json.Marshal(backups_dto.FinalizeBasebackupRequest{
+		BackupID:     uuid.New(),
+		StartSegment: "000000010000000100000001",
+		StopSegment:  "000000010000000100000010",
+	})
+
+	req, _ := http.NewRequest(
+		http.MethodPost,
+		"/api/v1/backups/postgres/wal/upload/full-complete",
+		bytes.NewReader(body),
+	)
+	req.Header.Set("Authorization", "invalid-token")
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 func Test_WalUpload_WalSegment_WithoutFullBackup_Returns204(t *testing.T) {
@@ -147,7 +271,7 @@ func Test_WalUpload_WalSegment_WithoutFullBackup_Returns204(t *testing.T) {
 	defer removeWalTestSetup(db, storage)
 
 	body := bytes.NewReader([]byte("wal content"))
-	req := newWalUploadRequest(body, agentToken, "wal", "000000010000000100000001", "", "")
+	req := newWalSegmentUploadRequest(body, agentToken, "000000010000000100000001")
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -164,7 +288,7 @@ func Test_WalUpload_WalSegment_WithGap_Returns204(t *testing.T) {
 
 	// Skip ...0012, upload ...0013 — should succeed (no chain validation on upload).
 	body := bytes.NewReader([]byte("wal content"))
-	req := newWalUploadRequest(body, agentToken, "wal", "000000010000000100000013", "", "")
+	req := newWalSegmentUploadRequest(body, agentToken, "000000010000000100000013")
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -180,14 +304,14 @@ func Test_WalUpload_WalSegment_DuplicateSegment_Returns200Idempotent(t *testing.
 
 	// Upload ...0011 once.
 	body1 := bytes.NewReader([]byte("wal content"))
-	req1 := newWalUploadRequest(body1, agentToken, "wal", "000000010000000100000011", "", "")
+	req1 := newWalSegmentUploadRequest(body1, agentToken, "000000010000000100000011")
 	w1 := httptest.NewRecorder()
 	router.ServeHTTP(w1, req1)
 	require.Equal(t, http.StatusNoContent, w1.Code)
 
 	// Upload the same segment again — must return 204 (idempotent).
 	body2 := bytes.NewReader([]byte("wal content"))
-	req2 := newWalUploadRequest(body2, agentToken, "wal", "000000010000000100000011", "", "")
+	req2 := newWalSegmentUploadRequest(body2, agentToken, "000000010000000100000011")
 	w2 := httptest.NewRecorder()
 	router.ServeHTTP(w2, req2)
 
@@ -216,7 +340,7 @@ func Test_WalUpload_WalSegment_ValidNextSegment_Returns200AndCreatesRecord(t *te
 
 	// First WAL segment after the full backup stop segment.
 	body := bytes.NewReader([]byte("wal segment data"))
-	req := newWalUploadRequest(body, agentToken, "wal", "000000010000000100000011", "", "")
+	req := newWalSegmentUploadRequest(body, agentToken, "000000010000000100000011")
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -547,29 +671,14 @@ func Test_GetNextFullBackupTime_WalSegmentAfterFullBackup_DoesNotImpactTime(t *t
 
 	setHourlyInterval(t, router, db.ID, ownerToken)
 
-	// Upload basebackup via API.
-	bbBody := bytes.NewReader([]byte("basebackup content"))
-	bbReq := newWalUploadRequest(
-		bbBody, agentToken, backups_core.PgWalUploadTypeBasebackup, "",
-		"000000010000000100000001", "000000010000000100000010",
-	)
-	bbW := httptest.NewRecorder()
-	router.ServeHTTP(bbW, bbReq)
-	require.Equal(t, http.StatusNoContent, bbW.Code)
+	uploadBasebackup(t, router, agentToken,
+		"000000010000000100000001", "000000010000000100000010")
 
 	// Shift the full backup's CreatedAt to 2 hours ago.
 	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour)
 	updateLastFullBackupTime(t, db.ID, twoHoursAgo)
 
-	// Upload WAL segment via API.
-	walBody := bytes.NewReader([]byte("wal segment content"))
-	walReq := newWalUploadRequest(
-		walBody, agentToken, backups_core.PgWalUploadTypeWal,
-		"000000010000000100000011", "", "",
-	)
-	walW := httptest.NewRecorder()
-	router.ServeHTTP(walW, walReq)
-	require.Equal(t, http.StatusNoContent, walW.Code)
+	uploadWalSegment(t, router, agentToken, "000000010000000100000011")
 
 	var response backups_dto.GetNextFullBackupTimeResponse
 	test_utils.MakeGetRequestAndUnmarshal(
@@ -598,15 +707,8 @@ func Test_GetNextFullBackupTime_FailedBasebackup_DoesNotImpactTime(t *testing.T)
 
 	setHourlyInterval(t, router, db.ID, ownerToken)
 
-	// Upload a successful basebackup via API.
-	bbBody := bytes.NewReader([]byte("basebackup content"))
-	bbReq := newWalUploadRequest(
-		bbBody, agentToken, backups_core.PgWalUploadTypeBasebackup, "",
-		"000000010000000100000001", "000000010000000100000010",
-	)
-	bbW := httptest.NewRecorder()
-	router.ServeHTTP(bbW, bbReq)
-	require.Equal(t, http.StatusNoContent, bbW.Code)
+	uploadBasebackup(t, router, agentToken,
+		"000000010000000100000001", "000000010000000100000010")
 
 	// Shift the full backup's CreatedAt to 2 hours ago.
 	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour)
@@ -653,15 +755,8 @@ func Test_GetNextFullBackupTime_NewCompletedFullBackup_ImpactsTime(t *testing.T)
 
 	setHourlyInterval(t, router, db.ID, ownerToken)
 
-	// Upload first basebackup via API.
-	bb1 := bytes.NewReader([]byte("first basebackup"))
-	bb1Req := newWalUploadRequest(
-		bb1, agentToken, backups_core.PgWalUploadTypeBasebackup, "",
-		"000000010000000100000001", "000000010000000100000010",
-	)
-	bb1W := httptest.NewRecorder()
-	router.ServeHTTP(bb1W, bb1Req)
-	require.Equal(t, http.StatusNoContent, bb1W.Code)
+	uploadBasebackup(t, router, agentToken,
+		"000000010000000100000001", "000000010000000100000010")
 
 	// Shift the first backup's CreatedAt to 3 hours ago.
 	threeHoursAgo := time.Now().UTC().Add(-3 * time.Hour)
@@ -685,15 +780,8 @@ func Test_GetNextFullBackupTime_NewCompletedFullBackup_ImpactsTime(t *testing.T)
 		"first next time should be in the past (old backup)",
 	)
 
-	// Upload second basebackup via API (created now).
-	bb2 := bytes.NewReader([]byte("second basebackup"))
-	bb2Req := newWalUploadRequest(
-		bb2, agentToken, backups_core.PgWalUploadTypeBasebackup, "",
-		"000000010000000100000011", "000000010000000100000020",
-	)
-	bb2W := httptest.NewRecorder()
-	router.ServeHTTP(bb2W, bb2Req)
-	require.Equal(t, http.StatusNoContent, bb2W.Code)
+	uploadBasebackup(t, router, agentToken,
+		"000000010000000100000011", "000000010000000100000020")
 
 	var secondResponse backups_dto.GetNextFullBackupTimeResponse
 	test_utils.MakeGetRequestAndUnmarshal(
@@ -931,15 +1019,18 @@ func Test_DownloadRestoreFile_UploadThenDownload_ContentMatches(t *testing.T) {
 
 			uploadContent := "test-basebackup-content-for-download"
 			body := bytes.NewReader([]byte(uploadContent))
-			req := newWalUploadRequest(
-				body, agentToken, backups_core.PgWalUploadTypeBasebackup, "",
-				"000000010000000100000001", "000000010000000100000010",
-			)
+			req, _ := http.NewRequest(http.MethodPost, "/api/v1/backups/postgres/wal/upload/full-start", body)
+			req.Header.Set("Authorization", agentToken)
+			req.Header.Set("Content-Type", "application/octet-stream")
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
-			require.Equal(t, http.StatusNoContent, w.Code)
+			require.Equal(t, http.StatusOK, w.Code)
 
-			WaitForBackupCompletion(t, db.ID, 0, 5*time.Second)
+			var uploadResp backups_dto.UploadBasebackupResponse
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &uploadResp))
+
+			completeFullBackupUpload(t, router, agentToken, uploadResp.BackupID,
+				"000000010000000100000001", "000000010000000100000010", nil)
 
 			var planResp backups_dto.GetRestorePlanResponse
 			test_utils.MakeGetRequestAndUnmarshal(
@@ -973,7 +1064,7 @@ func Test_DownloadRestoreFile_WalSegment_UploadThenDownload_ContentMatches(t *te
 
 	walContent := "test-wal-segment-content-for-download"
 	body := bytes.NewReader([]byte(walContent))
-	req := newWalUploadRequest(body, agentToken, "wal", "000000010000000100000011", "", "")
+	req := newWalSegmentUploadRequest(body, agentToken, "000000010000000100000011")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusNoContent, w.Code)
@@ -1178,33 +1269,79 @@ func removeWalTestSetup(db *databases.Database, storage *storages.Storage) {
 	storages.RemoveTestStorage(storage.ID)
 }
 
-func newWalUploadRequest(
+func newWalSegmentUploadRequest(
 	body io.Reader,
 	agentToken string,
-	uploadType backups_core.PgWalUploadType,
-	walSegmentName string,
-	walStart string,
-	walStop string,
+	segmentName string,
 ) *http.Request {
-	url := "/api/v1/backups/postgres/wal/upload"
-	if walStart != "" || walStop != "" {
-		url += "?fullBackupWalStartSegment=" + walStart + "&fullBackupWalStopSegment=" + walStop
-	}
-
-	req, err := http.NewRequest(http.MethodPost, url, body)
+	req, err := http.NewRequest(http.MethodPost, "/api/v1/backups/postgres/wal/upload/wal", body)
 	if err != nil {
 		panic(err)
 	}
 
 	req.Header.Set("Authorization", agentToken)
 	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("X-Upload-Type", string(uploadType))
-
-	if walSegmentName != "" {
-		req.Header.Set("X-Wal-Segment-Name", walSegmentName)
-	}
+	req.Header.Set("X-Wal-Segment-Name", segmentName)
 
 	return req
+}
+
+func uploadBasebackupPhase1(
+	t *testing.T,
+	router *gin.Engine,
+	agentToken string,
+) uuid.UUID {
+	t.Helper()
+
+	body := bytes.NewReader([]byte("test-basebackup-content"))
+
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/backups/postgres/wal/upload/full-start", body)
+	req.Header.Set("Authorization", agentToken)
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var response backups_dto.UploadBasebackupResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	require.NotEqual(t, uuid.Nil, response.BackupID)
+
+	return response.BackupID
+}
+
+func completeFullBackupUpload(
+	t *testing.T,
+	router *gin.Engine,
+	agentToken string,
+	backupID uuid.UUID,
+	walStart string,
+	walStop string,
+	errMsg *string,
+) {
+	t.Helper()
+
+	request := backups_dto.FinalizeBasebackupRequest{
+		BackupID:     backupID,
+		StartSegment: walStart,
+		StopSegment:  walStop,
+		Error:        errMsg,
+	}
+
+	reqBody, _ := json.Marshal(request)
+	req, _ := http.NewRequest(
+		http.MethodPost,
+		"/api/v1/backups/postgres/wal/upload/full-complete",
+		bytes.NewReader(reqBody),
+	)
+	req.Header.Set("Authorization", agentToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
 }
 
 func uploadBasebackup(
@@ -1216,15 +1353,8 @@ func uploadBasebackup(
 ) {
 	t.Helper()
 
-	body := bytes.NewReader([]byte("test-basebackup-content"))
-	req := newWalUploadRequest(
-		body, agentToken, backups_core.PgWalUploadTypeBasebackup, "",
-		walStart, walStop,
-	)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusNoContent, w.Code)
+	backupID := uploadBasebackupPhase1(t, router, agentToken)
+	completeFullBackupUpload(t, router, agentToken, backupID, walStart, walStop, nil)
 }
 
 func uploadWalSegment(
@@ -1236,9 +1366,12 @@ func uploadWalSegment(
 	t.Helper()
 
 	body := bytes.NewReader([]byte("test-wal-segment-content"))
-	req := newWalUploadRequest(
-		body, agentToken, backups_core.PgWalUploadTypeWal, segmentName, "", "",
-	)
+
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/backups/postgres/wal/upload/wal", body)
+	req.Header.Set("Authorization", agentToken)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("X-Wal-Segment-Name", segmentName)
+
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 

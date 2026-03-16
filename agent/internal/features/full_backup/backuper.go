@@ -173,61 +173,75 @@ func (backuper *FullBackuper) executeAndUploadBasebackup(ctx context.Context) er
 		return fmt.Errorf("start pg_basebackup: %w", err)
 	}
 
-	var compressedBuf bytes.Buffer
-	compressErr := backuper.compressToBuffer(&compressedBuf, stdoutPipe)
+	// Phase 1: Stream compressed data via io.Pipe directly to the API.
+	pipeReader, pipeWriter := io.Pipe()
+	go backuper.compressAndStream(pipeWriter, stdoutPipe)
+
+	uploadCtx, cancel := context.WithTimeout(ctx, uploadTimeout)
+	defer cancel()
+
+	uploadResp, uploadErr := backuper.apiClient.UploadBasebackup(uploadCtx, pipeReader)
 
 	cmdErr := cmd.Wait()
+
+	if uploadErr != nil {
+		return fmt.Errorf("upload basebackup: %w", uploadErr)
+	}
+
 	if cmdErr != nil {
-		return fmt.Errorf("pg_basebackup exited with error: %w (stderr: %s)", cmdErr, stderrBuf.String())
+		errMsg := fmt.Sprintf("pg_basebackup exited with error: %v (stderr: %s)", cmdErr, stderrBuf.String())
+		_ = backuper.apiClient.FinalizeBasebackupWithError(ctx, uploadResp.BackupID, errMsg)
+
+		return fmt.Errorf("pg_basebackup: %w", cmdErr)
 	}
 
-	if compressErr != nil {
-		return fmt.Errorf("compress basebackup: %w", compressErr)
-	}
-
+	// Phase 2: Parse stderr for WAL segments and finalize the backup.
 	stderrStr := stderrBuf.String()
 	backuper.log.Debug("pg_basebackup stderr", "stderr", stderrStr)
 
 	startSegment, stopSegment, err := ParseBasebackupStderr(stderrStr)
 	if err != nil {
+		errMsg := fmt.Sprintf("parse pg_basebackup stderr: %v", err)
+		_ = backuper.apiClient.FinalizeBasebackupWithError(ctx, uploadResp.BackupID, errMsg)
+
 		return fmt.Errorf("parse pg_basebackup stderr: %w", err)
 	}
 
 	backuper.log.Info("Basebackup WAL segments parsed",
 		"startSegment", startSegment,
 		"stopSegment", stopSegment,
-		"compressedSize", compressedBuf.Len(),
+		"backupId", uploadResp.BackupID,
 	)
 
-	uploadCtx, cancel := context.WithTimeout(ctx, uploadTimeout)
-	defer cancel()
-
-	if err := backuper.apiClient.UploadBasebackup(uploadCtx, startSegment, stopSegment, &compressedBuf); err != nil {
-		return fmt.Errorf("upload basebackup: %w", err)
+	if err := backuper.apiClient.FinalizeBasebackup(ctx, uploadResp.BackupID, startSegment, stopSegment); err != nil {
+		return fmt.Errorf("finalize basebackup: %w", err)
 	}
 
 	return nil
 }
 
-func (backuper *FullBackuper) compressToBuffer(dst *bytes.Buffer, reader io.Reader) error {
-	encoder, err := zstd.NewWriter(dst,
-		zstd.WithEncoderLevel(zstd.EncoderLevel(5)),
+func (backuper *FullBackuper) compressAndStream(pipeWriter *io.PipeWriter, reader io.Reader) {
+	encoder, err := zstd.NewWriter(pipeWriter,
+		zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(5)),
 		zstd.WithEncoderCRC(true),
 	)
 	if err != nil {
-		return fmt.Errorf("create zstd encoder: %w", err)
+		_ = pipeWriter.CloseWithError(fmt.Errorf("create zstd encoder: %w", err))
+		return
 	}
 
 	if _, err := io.Copy(encoder, reader); err != nil {
 		_ = encoder.Close()
-		return fmt.Errorf("compress: %w", err)
+		_ = pipeWriter.CloseWithError(fmt.Errorf("compress: %w", err))
+		return
 	}
 
 	if err := encoder.Close(); err != nil {
-		return fmt.Errorf("close encoder: %w", err)
+		_ = pipeWriter.CloseWithError(fmt.Errorf("close encoder: %w", err))
+		return
 	}
 
-	return nil
+	_ = pipeWriter.Close()
 }
 
 func (backuper *FullBackuper) reportError(ctx context.Context, errMsg string) {

@@ -1004,6 +1004,142 @@ func (m *mockBackupRemoveListener) OnBeforeBackupRemove(backup *backups_core.Bac
 	return nil
 }
 
+func Test_CleanStaleUploadedBasebackups_MarksAsFailed(t *testing.T) {
+	router := CreateTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+	storage := storages.CreateTestStorage(workspace.ID)
+	notifier := notifiers.CreateTestNotifier(workspace.ID)
+	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		notifiers.RemoveTestNotifier(notifier)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
+	staleTime := time.Now().UTC().Add(-15 * time.Minute)
+	walBackupType := backups_core.PgWalBackupTypeFullBackup
+	staleBackup := &backups_core.Backup{
+		ID:                uuid.New(),
+		DatabaseID:        database.ID,
+		StorageID:         storage.ID,
+		Status:            backups_core.BackupStatusInProgress,
+		PgWalBackupType:   &walBackupType,
+		UploadCompletedAt: &staleTime,
+		CreatedAt:         staleTime,
+	}
+
+	err := backupRepository.Save(staleBackup)
+	assert.NoError(t, err)
+
+	cleaner := GetBackupCleaner()
+	err = cleaner.cleanStaleUploadedBasebackups()
+	assert.NoError(t, err)
+
+	updated, err := backupRepository.FindByID(staleBackup.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, backups_core.BackupStatusFailed, updated.Status)
+	assert.NotNil(t, updated.FailMessage)
+	assert.Contains(t, *updated.FailMessage, "finalization timed out")
+}
+
+func Test_CleanStaleUploadedBasebackups_SkipsRecentUploads(t *testing.T) {
+	router := CreateTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+	storage := storages.CreateTestStorage(workspace.ID)
+	notifier := notifiers.CreateTestNotifier(workspace.ID)
+	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		notifiers.RemoveTestNotifier(notifier)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
+	recentTime := time.Now().UTC().Add(-2 * time.Minute)
+	walBackupType := backups_core.PgWalBackupTypeFullBackup
+	recentBackup := &backups_core.Backup{
+		ID:                uuid.New(),
+		DatabaseID:        database.ID,
+		StorageID:         storage.ID,
+		Status:            backups_core.BackupStatusInProgress,
+		PgWalBackupType:   &walBackupType,
+		UploadCompletedAt: &recentTime,
+		CreatedAt:         recentTime,
+	}
+
+	err := backupRepository.Save(recentBackup)
+	assert.NoError(t, err)
+
+	cleaner := GetBackupCleaner()
+	err = cleaner.cleanStaleUploadedBasebackups()
+	assert.NoError(t, err)
+
+	updated, err := backupRepository.FindByID(recentBackup.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, backups_core.BackupStatusInProgress, updated.Status)
+}
+
+func Test_CleanStaleUploadedBasebackups_SkipsActiveStreaming(t *testing.T) {
+	router := CreateTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+	storage := storages.CreateTestStorage(workspace.ID)
+	notifier := notifiers.CreateTestNotifier(workspace.ID)
+	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		notifiers.RemoveTestNotifier(notifier)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
+	walBackupType := backups_core.PgWalBackupTypeFullBackup
+	activeBackup := &backups_core.Backup{
+		ID:              uuid.New(),
+		DatabaseID:      database.ID,
+		StorageID:       storage.ID,
+		Status:          backups_core.BackupStatusInProgress,
+		PgWalBackupType: &walBackupType,
+		CreatedAt:       time.Now().UTC().Add(-30 * time.Minute),
+	}
+
+	err := backupRepository.Save(activeBackup)
+	assert.NoError(t, err)
+
+	cleaner := GetBackupCleaner()
+	err = cleaner.cleanStaleUploadedBasebackups()
+	assert.NoError(t, err)
+
+	updated, err := backupRepository.FindByID(activeBackup.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, backups_core.BackupStatusInProgress, updated.Status)
+	assert.Nil(t, updated.UploadCompletedAt)
+}
+
 func createTestInterval() *intervals.Interval {
 	timeOfDay := "04:00"
 	interval := &intervals.Interval{
