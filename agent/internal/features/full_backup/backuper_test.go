@@ -632,9 +632,11 @@ func TestHelperProcess(t *testing.T) {
 func validStderr() string {
 	return `pg_basebackup: initiating base backup, waiting for checkpoint to complete
 pg_basebackup: checkpoint completed
-pg_basebackup: write-ahead log start point: 0/2000028, on timeline 1
-pg_basebackup: checkpoint redo point at 0/2000028
+pg_basebackup: write-ahead log start point: 0/2000028 on timeline 1
+pg_basebackup: starting background WAL receiver
 pg_basebackup: write-ahead log end point: 0/2000100
+pg_basebackup: waiting for background process to finish streaming ...
+pg_basebackup: syncing data to disk ...
 pg_basebackup: base backup completed`
 }
 

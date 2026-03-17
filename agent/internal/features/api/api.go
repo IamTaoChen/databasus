@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -14,25 +15,30 @@ import (
 )
 
 const (
-	chainValidPath     = "/api/v1/backups/postgres/wal/is-wal-chain-valid-since-last-full-backup"
-	nextBackupTimePath = "/api/v1/backups/postgres/wal/next-full-backup-time"
-	walUploadPath      = "/api/v1/backups/postgres/wal/upload/wal"
-	fullStartPath      = "/api/v1/backups/postgres/wal/upload/full-start"
-	fullCompletePath   = "/api/v1/backups/postgres/wal/upload/full-complete"
-	reportErrorPath    = "/api/v1/backups/postgres/wal/error"
-	versionPath        = "/api/v1/system/version"
-	agentBinaryPath    = "/api/v1/system/agent"
+	chainValidPath      = "/api/v1/backups/postgres/wal/is-wal-chain-valid-since-last-full-backup"
+	nextBackupTimePath  = "/api/v1/backups/postgres/wal/next-full-backup-time"
+	walUploadPath       = "/api/v1/backups/postgres/wal/upload/wal"
+	fullStartPath       = "/api/v1/backups/postgres/wal/upload/full-start"
+	fullCompletePath    = "/api/v1/backups/postgres/wal/upload/full-complete"
+	reportErrorPath     = "/api/v1/backups/postgres/wal/error"
+	restorePlanPath     = "/api/v1/backups/postgres/wal/restore/plan"
+	restoreDownloadPath = "/api/v1/backups/postgres/wal/restore/download"
+	versionPath         = "/api/v1/system/version"
+	agentBinaryPath     = "/api/v1/system/agent"
 
 	apiCallTimeout   = 30 * time.Second
 	maxRetryAttempts = 3
 	retryBaseDelay   = 1 * time.Second
 )
 
+// For stream uploads (basebackup and WAL segments) the standard resty client is not used,
+// because it buffers the entire body in memory before sending.
 type Client struct {
-	json   *resty.Client
-	stream *resty.Client
-	host   string
-	log    *slog.Logger
+	json       *resty.Client
+	streamHTTP *http.Client
+	host       string
+	token      string
+	log        *slog.Logger
 }
 
 func NewClient(host, token string, log *slog.Logger) *Client {
@@ -54,14 +60,12 @@ func NewClient(host, token string, log *slog.Logger) *Client {
 		}).
 		OnBeforeRequest(setAuth)
 
-	streamClient := resty.New().
-		OnBeforeRequest(setAuth)
-
 	return &Client{
-		json:   jsonClient,
-		stream: streamClient,
-		host:   host,
-		log:    log,
+		json:       jsonClient,
+		streamHTTP: &http.Client{},
+		host:       host,
+		token:      token,
+		log:        log,
 	}
 }
 
@@ -117,25 +121,28 @@ func (c *Client) UploadBasebackup(
 	ctx context.Context,
 	body io.Reader,
 ) (*UploadBasebackupResponse, error) {
-	resp, err := c.stream.R().
-		SetContext(ctx).
-		SetBody(body).
-		SetHeader("Content-Type", "application/octet-stream").
-		SetDoNotParseResponse(true).
-		Post(c.buildURL(fullStartPath))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.buildURL(fullStartPath), body)
+	if err != nil {
+		return nil, fmt.Errorf("create upload request: %w", err)
+	}
+
+	c.setStreamHeaders(req)
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	resp, err := c.streamHTTP.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("upload request: %w", err)
 	}
-	defer func() { _ = resp.RawBody().Close() }()
+	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode() != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.RawBody())
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
 
-		return nil, fmt.Errorf("upload failed with status %d: %s", resp.StatusCode(), string(respBody))
+		return nil, fmt.Errorf("upload failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	var result UploadBasebackupResponse
-	if err := json.NewDecoder(resp.RawBody()).Decode(&result); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode upload response: %w", err)
 	}
 
@@ -195,26 +202,29 @@ func (c *Client) UploadWalSegment(
 	segmentName string,
 	body io.Reader,
 ) (*UploadWalSegmentResult, error) {
-	resp, err := c.stream.R().
-		SetContext(ctx).
-		SetBody(body).
-		SetHeader("Content-Type", "application/octet-stream").
-		SetHeader("X-Wal-Segment-Name", segmentName).
-		SetDoNotParseResponse(true).
-		Post(c.buildURL(walUploadPath))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.buildURL(walUploadPath), body)
+	if err != nil {
+		return nil, fmt.Errorf("create WAL upload request: %w", err)
+	}
+
+	c.setStreamHeaders(req)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("X-Wal-Segment-Name", segmentName)
+
+	resp, err := c.streamHTTP.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("upload request: %w", err)
 	}
-	defer func() { _ = resp.RawBody().Close() }()
+	defer func() { _ = resp.Body.Close() }()
 
-	switch resp.StatusCode() {
+	switch resp.StatusCode {
 	case http.StatusNoContent:
 		return &UploadWalSegmentResult{IsGapDetected: false}, nil
 
 	case http.StatusConflict:
 		var errResp uploadErrorResponse
 
-		if err := json.NewDecoder(resp.RawBody()).Decode(&errResp); err != nil {
+		if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
 			return &UploadWalSegmentResult{IsGapDetected: true}, nil
 		}
 
@@ -225,10 +235,77 @@ func (c *Client) UploadWalSegment(
 		}, nil
 
 	default:
-		respBody, _ := io.ReadAll(resp.RawBody())
+		respBody, _ := io.ReadAll(resp.Body)
 
-		return nil, fmt.Errorf("upload failed with status %d: %s", resp.StatusCode(), string(respBody))
+		return nil, fmt.Errorf("upload failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
+}
+
+func (c *Client) GetRestorePlan(
+	ctx context.Context,
+	backupID string,
+) (*GetRestorePlanResponse, *GetRestorePlanErrorResponse, error) {
+	request := c.json.R().SetContext(ctx)
+
+	if backupID != "" {
+		request.SetQueryParam("backupId", backupID)
+	}
+
+	httpResp, err := request.Get(c.buildURL(restorePlanPath))
+	if err != nil {
+		return nil, nil, fmt.Errorf("get restore plan: %w", err)
+	}
+
+	switch httpResp.StatusCode() {
+	case http.StatusOK:
+		var response GetRestorePlanResponse
+		if err := json.Unmarshal(httpResp.Body(), &response); err != nil {
+			return nil, nil, fmt.Errorf("decode restore plan response: %w", err)
+		}
+
+		return &response, nil, nil
+
+	case http.StatusBadRequest:
+		var errorResponse GetRestorePlanErrorResponse
+		if err := json.Unmarshal(httpResp.Body(), &errorResponse); err != nil {
+			return nil, nil, fmt.Errorf("decode restore plan error: %w", err)
+		}
+
+		return nil, &errorResponse, nil
+
+	default:
+		return nil, nil, fmt.Errorf("get restore plan: server returned status %d: %s",
+			httpResp.StatusCode(), httpResp.String())
+	}
+}
+
+func (c *Client) DownloadBackupFile(
+	ctx context.Context,
+	backupID string,
+) (io.ReadCloser, error) {
+	requestURL := c.buildURL(restoreDownloadPath) + "?" + url.Values{"backupId": {backupID}}.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create download request: %w", err)
+	}
+
+	c.setStreamHeaders(req)
+
+	resp, err := c.streamHTTP.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("download backup file: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+
+		return nil, fmt.Errorf("download backup file: server returned status %d: %s",
+			resp.StatusCode, string(respBody))
+	}
+
+	return resp.Body, nil
 }
 
 func (c *Client) FetchServerVersion(ctx context.Context) (string, error) {
@@ -250,27 +327,32 @@ func (c *Client) FetchServerVersion(ctx context.Context) (string, error) {
 }
 
 func (c *Client) DownloadAgentBinary(ctx context.Context, arch, destPath string) error {
-	resp, err := c.stream.R().
-		SetContext(ctx).
-		SetQueryParam("arch", arch).
-		SetDoNotParseResponse(true).
-		Get(c.buildURL(agentBinaryPath))
+	requestURL := c.buildURL(agentBinaryPath) + "?" + url.Values{"arch": {arch}}.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return fmt.Errorf("create agent download request: %w", err)
+	}
+
+	c.setStreamHeaders(req)
+
+	resp, err := c.streamHTTP.Do(req)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.RawBody().Close() }()
+	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode() != http.StatusOK {
-		return fmt.Errorf("server returned %d for agent download", resp.StatusCode())
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("server returned %d for agent download", resp.StatusCode)
 	}
 
-	f, err := os.Create(destPath)
+	file, err := os.Create(destPath)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
+	defer func() { _ = file.Close() }()
 
-	_, err = io.Copy(f, resp.RawBody())
+	_, err = io.Copy(file, resp.Body)
 
 	return err
 }
@@ -285,4 +367,10 @@ func (c *Client) checkResponse(resp *resty.Response, method string) error {
 	}
 
 	return nil
+}
+
+func (c *Client) setStreamHeaders(req *http.Request) {
+	if c.token != "" {
+		req.Header.Set("Authorization", c.token)
+	}
 }

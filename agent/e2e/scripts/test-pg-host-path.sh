@@ -1,22 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
-ARTIFACTS="/opt/agent/artifacts"
-AGENT="/tmp/test-agent"
+SCRIPT_DIR="$(dirname "$0")"
+source "$SCRIPT_DIR/backup-restore-helpers.sh"
 
-# Cleanup from previous runs
-pkill -f "test-agent" 2>/dev/null || true
-for i in $(seq 1 20); do
-  pgrep -f "test-agent" > /dev/null 2>&1 || break
-  sleep 0.5
-done
-pkill -9 -f "test-agent" 2>/dev/null || true
-sleep 0.5
-rm -f "$AGENT" "$AGENT.update" databasus.lock databasus.log databasus.log.old databasus.json 2>/dev/null || true
+MOCK_SERVER="${MOCK_SERVER_OVERRIDE:-http://e2e-mock-server:4050}"
+PGDATA="/tmp/pgdata"
+RESTORE_PGDATA="/tmp/restore-pgdata"
+WAL_QUEUE="/tmp/wal-queue"
+PG_PORT=5433
 
-# Copy agent binary
-cp "$ARTIFACTS/agent-v1" "$AGENT"
-chmod +x "$AGENT"
+PG_BIN_DIR=$(find_pg_bin_dir)
+echo "Using PG bin dir: $PG_BIN_DIR"
 
 # Verify pg_basebackup is in PATH
 if ! which pg_basebackup > /dev/null 2>&1; then
@@ -24,36 +19,45 @@ if ! which pg_basebackup > /dev/null 2>&1; then
   exit 1
 fi
 
-# Run start with --skip-update and pg-type=host
-echo "Running agent start (pg_basebackup in PATH)..."
-OUTPUT=$("$AGENT" start \
-  --skip-update \
-  --databasus-host http://e2e-mock-server:4050 \
-  --db-id test-db-id \
-  --token test-token \
-  --pg-host e2e-postgres \
-  --pg-port 5432 \
-  --pg-user testuser \
-  --pg-password testpassword \
-  --pg-wal-dir /tmp/wal \
-  --pg-type host 2>&1)
+echo "=== Phase 1: Setup agent ==="
+setup_agent
 
-EXIT_CODE=$?
-echo "$OUTPUT"
+echo "=== Phase 2: Initialize PostgreSQL ==="
+init_pg_local "$PGDATA" "$PG_PORT" "$WAL_QUEUE" "$PG_BIN_DIR"
 
-if [ "$EXIT_CODE" -ne 0 ]; then
-  echo "FAIL: Agent exited with code $EXIT_CODE"
-  exit 1
-fi
+echo "=== Phase 3: Insert test data ==="
+insert_test_data "$PG_PORT" "$PG_BIN_DIR"
 
-if ! echo "$OUTPUT" | grep -q "pg_basebackup verified"; then
-  echo "FAIL: Expected output to contain 'pg_basebackup verified'"
-  exit 1
-fi
+echo "=== Phase 4: Force checkpoint and start agent backup ==="
+force_checkpoint "$PG_PORT" "$PG_BIN_DIR"
+run_agent_backup "$MOCK_SERVER" "127.0.0.1" "$PG_PORT" "$WAL_QUEUE" "host"
 
-if ! echo "$OUTPUT" | grep -q "PostgreSQL connection verified"; then
-  echo "FAIL: Expected output to contain 'PostgreSQL connection verified'"
-  exit 1
-fi
+echo "=== Phase 5: Generate WAL in background ==="
+generate_wal_background "$PG_PORT" "$PG_BIN_DIR" &
+WAL_GEN_PID=$!
 
-echo "pg_basebackup found in PATH and DB connection verified"
+echo "=== Phase 6: Wait for backup to complete ==="
+wait_for_backup_complete "$MOCK_SERVER" 120
+
+echo "=== Phase 7: Stop WAL generator, agent, and PostgreSQL ==="
+kill $WAL_GEN_PID 2>/dev/null || true
+wait $WAL_GEN_PID 2>/dev/null || true
+stop_agent
+stop_pg "$PGDATA" "$PG_BIN_DIR"
+
+echo "=== Phase 8: Restore ==="
+run_agent_restore "$MOCK_SERVER" "$RESTORE_PGDATA"
+
+echo "=== Phase 9: Start PostgreSQL on restored data ==="
+start_restored_pg "$RESTORE_PGDATA" "$PG_PORT" "$PG_BIN_DIR"
+
+echo "=== Phase 10: Wait for recovery ==="
+wait_for_recovery_complete "$PG_PORT" "$PG_BIN_DIR" 60
+
+echo "=== Phase 11: Verify data ==="
+verify_restored_data "$PG_PORT" "$PG_BIN_DIR"
+
+echo "=== Phase 12: Cleanup ==="
+stop_pg "$RESTORE_PGDATA" "$PG_BIN_DIR"
+
+echo "pg_basebackup in PATH: full backup-restore lifecycle passed"

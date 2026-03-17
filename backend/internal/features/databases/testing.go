@@ -105,6 +105,76 @@ func CreateTestDatabase(
 	return database
 }
 
+func CreateTestPostgresWalDatabase(
+	workspaceID uuid.UUID,
+	notifier *notifiers.Notifier,
+) *Database {
+	database := &Database{
+		WorkspaceID: &workspaceID,
+		Name:        "test-wal " + uuid.New().String(),
+		Type:        DatabaseTypePostgres,
+		Postgresql: &postgresql.PostgresqlDatabase{
+			BackupType: postgresql.PostgresBackupTypeWalV1,
+			Version:    tools.PostgresqlVersion16,
+			CpuCount:   1,
+		},
+		Notifiers: []notifiers.Notifier{
+			*notifier,
+		},
+	}
+
+	database, err := databaseRepository.Save(database)
+	if err != nil {
+		panic(err)
+	}
+
+	return database
+}
+
+func CreateTestMariadbDatabase(
+	workspaceID uuid.UUID,
+	notifier *notifiers.Notifier,
+) *Database {
+	database := &Database{
+		WorkspaceID: &workspaceID,
+		Name:        "test-mariadb " + uuid.New().String(),
+		Type:        DatabaseTypeMariadb,
+		Mariadb:     GetTestMariadbConfig(),
+		Notifiers: []notifiers.Notifier{
+			*notifier,
+		},
+	}
+
+	database, err := databaseRepository.Save(database)
+	if err != nil {
+		panic(err)
+	}
+
+	return database
+}
+
+func CreateTestMongodbDatabase(
+	workspaceID uuid.UUID,
+	notifier *notifiers.Notifier,
+) *Database {
+	database := &Database{
+		WorkspaceID: &workspaceID,
+		Name:        "test-mongodb " + uuid.New().String(),
+		Type:        DatabaseTypeMongodb,
+		Mongodb:     GetTestMongodbConfig(),
+		Notifiers: []notifiers.Notifier{
+			*notifier,
+		},
+	}
+
+	database, err := databaseRepository.Save(database)
+	if err != nil {
+		panic(err)
+	}
+
+	return database
+}
+
 func RemoveTestDatabase(database *Database) {
 	// Delete backups and backup configs associated with this database
 	// We hardcode SQL here because we cannot call backups feature due to DI inversion

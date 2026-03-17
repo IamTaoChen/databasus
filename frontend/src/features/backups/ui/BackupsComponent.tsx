@@ -19,23 +19,31 @@ import {
   type BackupConfig,
   BackupEncryption,
   BackupStatus,
+  PgWalBackupType,
   backupConfigApi,
   backupsApi,
 } from '../../../entity/backups';
-import { type Database, DatabaseType } from '../../../entity/databases';
+import { type Database, DatabaseType, PostgresBackupType } from '../../../entity/databases';
 import { getUserTimeFormat } from '../../../shared/time';
 import { ConfirmationComponent } from '../../../shared/ui';
 import { RestoresComponent } from '../../restores';
+import { AgentRestoreComponent } from './AgentRestoreComponent';
 
 const BACKUPS_PAGE_SIZE = 50;
 
 interface Props {
   database: Database;
   isCanManageDBs: boolean;
+  isDirectlyUnderTab?: boolean;
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-export const BackupsComponent = ({ database, isCanManageDBs, scrollContainerRef }: Props) => {
+export const BackupsComponent = ({
+  database,
+  isCanManageDBs,
+  isDirectlyUnderTab,
+  scrollContainerRef,
+}: Props) => {
   const [isBackupsLoading, setIsBackupsLoading] = useState(false);
   const [backups, setBackups] = useState<Backup[]>([]);
 
@@ -457,7 +465,21 @@ export const BackupsComponent = ({ database, isCanManageDBs, scrollContainerRef 
       dataIndex: 'backupSizeMb',
       key: 'backupSizeMb',
       width: 150,
-      render: (sizeMb: number) => formatSize(sizeMb),
+      render: (sizeMb: number, record: Backup) => (
+        <div className="flex items-center gap-2">
+          {formatSize(sizeMb)}
+          {record.pgWalBackupType === PgWalBackupType.PG_FULL_BACKUP && (
+            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+              FULL
+            </span>
+          )}
+          {record.pgWalBackupType === PgWalBackupType.PG_WAL_SEGMENT && (
+            <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900 dark:text-purple-300">
+              WAL
+            </span>
+          )}
+        </div>
+      ),
     },
     {
       title: 'Duration',
@@ -483,7 +505,9 @@ export const BackupsComponent = ({ database, isCanManageDBs, scrollContainerRef 
   }
 
   return (
-    <div className="mt-5 w-full rounded-md bg-white p-3 shadow md:p-5 dark:bg-gray-800">
+    <div
+      className={`w-full bg-white p-3 shadow md:p-5 dark:bg-gray-800 ${isDirectlyUnderTab ? 'rounded-tr-md rounded-br-md rounded-bl-md' : 'rounded-md'}`}
+    >
       <h2 className="text-lg font-bold md:text-xl dark:text-white">Backups</h2>
 
       {!isBackupConfigLoading && !backupConfig?.isBackupsEnabled && (
@@ -494,18 +518,20 @@ export const BackupsComponent = ({ database, isCanManageDBs, scrollContainerRef 
 
       <div className="mt-5" />
 
-      <div className="flex">
-        <Button
-          onClick={makeBackup}
-          className="mr-1"
-          type="primary"
-          disabled={isMakeBackupRequestLoading}
-          loading={isMakeBackupRequestLoading}
-        >
-          <span className="md:hidden">Backup now</span>
-          <span className="hidden md:inline">Make backup right now</span>
-        </Button>
-      </div>
+      {database.postgresql?.backupType !== PostgresBackupType.WAL_V1 && (
+        <div className="flex">
+          <Button
+            onClick={makeBackup}
+            className="mr-1"
+            type="primary"
+            disabled={isMakeBackupRequestLoading}
+            loading={isMakeBackupRequestLoading}
+          >
+            <span className="md:hidden">Backup now</span>
+            <span className="hidden md:inline">Make backup right now</span>
+          </Button>
+        </div>
+      )}
 
       <div className="mt-5 w-full md:max-w-[850px]">
         {/* Mobile card view */}
@@ -538,7 +564,19 @@ export const BackupsComponent = ({ database, isCanManageDBs, scrollContainerRef 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">Size</div>
-                        <div className="text-sm font-medium">{formatSize(backup.backupSizeMb)}</div>
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                          {formatSize(backup.backupSizeMb)}
+                          {backup.pgWalBackupType === PgWalBackupType.PG_FULL_BACKUP && (
+                            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                              FULL
+                            </span>
+                          )}
+                          {backup.pgWalBackupType === PgWalBackupType.PG_WAL_SEGMENT && (
+                            <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900 dark:text-purple-300">
+                              WAL
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">Duration</div>
@@ -606,21 +644,36 @@ export const BackupsComponent = ({ database, isCanManageDBs, scrollContainerRef 
         />
       )}
 
-      {showingRestoresBackupId && (
-        <Modal
-          width={400}
-          open={!!showingRestoresBackupId}
-          onCancel={() => setShowingRestoresBackupId(undefined)}
-          title="Restore from backup"
-          footer={null}
-          maskClosable={false}
-        >
-          <RestoresComponent
-            database={database}
-            backup={backups.find((b) => b.id === showingRestoresBackupId) as Backup}
-          />
-        </Modal>
-      )}
+      {showingRestoresBackupId &&
+        (database.postgresql?.backupType === PostgresBackupType.WAL_V1 ? (
+          <Modal
+            width={600}
+            open={!!showingRestoresBackupId}
+            onCancel={() => setShowingRestoresBackupId(undefined)}
+            title="Restore from backup"
+            footer={null}
+            maskClosable={false}
+          >
+            <AgentRestoreComponent
+              database={database}
+              backup={backups.find((b) => b.id === showingRestoresBackupId) as Backup}
+            />
+          </Modal>
+        ) : (
+          <Modal
+            width={400}
+            open={!!showingRestoresBackupId}
+            onCancel={() => setShowingRestoresBackupId(undefined)}
+            title="Restore from backup"
+            footer={null}
+            maskClosable={false}
+          >
+            <RestoresComponent
+              database={database}
+              backup={backups.find((b) => b.id === showingRestoresBackupId) as Backup}
+            />
+          </Modal>
+        ))}
 
       {showingBackupError && (
         <Modal

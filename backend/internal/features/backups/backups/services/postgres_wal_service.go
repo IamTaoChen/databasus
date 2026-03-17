@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,6 +39,8 @@ func (s *PostgreWalBackupService) UploadWalSegment(
 	walSegmentName string,
 	body io.Reader,
 ) error {
+	uploadStart := time.Now().UTC()
+
 	if err := s.validateWalBackupType(database); err != nil {
 		return err
 	}
@@ -72,14 +75,22 @@ func (s *PostgreWalBackupService) UploadWalSegment(
 		return fmt.Errorf("failed to create backup record: %w", err)
 	}
 
-	sizeBytes, streamErr := s.streamToStorage(ctx, backup, backupConfig, body)
+	inputCounter := &countingReader{r: body}
+	progressDone := make(chan struct{})
+	go s.startProgressTracker(backup, inputCounter, uploadStart, progressDone)
+
+	sizeBytes, streamErr := s.streamToStorage(ctx, backup, backupConfig, inputCounter)
+	close(progressDone)
+
 	if streamErr != nil {
 		errMsg := streamErr.Error()
+		backup.BackupDurationMs = time.Since(uploadStart).Milliseconds()
 		s.markFailed(backup, errMsg)
 
 		return fmt.Errorf("upload failed: %w", streamErr)
 	}
 
+	backup.BackupDurationMs = time.Since(uploadStart).Milliseconds()
 	s.markCompleted(backup, sizeBytes)
 
 	return nil
@@ -93,6 +104,8 @@ func (s *PostgreWalBackupService) UploadBasebackup(
 	database *databases.Database,
 	body io.Reader,
 ) (uuid.UUID, error) {
+	uploadStart := time.Now().UTC()
+
 	if err := s.validateWalBackupType(database); err != nil {
 		return uuid.Nil, err
 	}
@@ -117,9 +130,16 @@ func (s *PostgreWalBackupService) UploadBasebackup(
 		return uuid.Nil, fmt.Errorf("failed to create backup record: %w", err)
 	}
 
-	sizeBytes, streamErr := s.streamToStorage(ctx, backup, backupConfig, body)
+	inputCounter := &countingReader{r: body}
+	progressDone := make(chan struct{})
+	go s.startProgressTracker(backup, inputCounter, uploadStart, progressDone)
+
+	sizeBytes, streamErr := s.streamToStorage(ctx, backup, backupConfig, inputCounter)
+	close(progressDone)
+
 	if streamErr != nil {
 		errMsg := streamErr.Error()
+		backup.BackupDurationMs = time.Since(uploadStart).Milliseconds()
 		s.markFailed(backup, errMsg)
 
 		return uuid.Nil, fmt.Errorf("upload failed: %w", streamErr)
@@ -128,6 +148,7 @@ func (s *PostgreWalBackupService) UploadBasebackup(
 	now := time.Now().UTC()
 	backup.UploadCompletedAt = &now
 	backup.BackupSizeMb = float64(sizeBytes) / (1024 * 1024)
+	backup.BackupDurationMs = time.Since(uploadStart).Milliseconds()
 
 	if err := s.backupRepository.Save(backup); err != nil {
 		return uuid.Nil, fmt.Errorf("failed to update backup after upload: %w", err)
@@ -483,7 +504,7 @@ func (s *PostgreWalBackupService) streamDirect(
 		return 0, err
 	}
 
-	return cr.n, nil
+	return cr.n.Load(), nil
 }
 
 func (s *PostgreWalBackupService) streamEncrypted(
@@ -544,7 +565,7 @@ func (s *PostgreWalBackupService) streamEncrypted(
 	backup.EncryptionSalt = &encryptionSetup.SaltBase64
 	backup.EncryptionIV = &encryptionSetup.NonceBase64
 
-	return cr.n, nil
+	return cr.n.Load(), nil
 }
 
 func (s *PostgreWalBackupService) markCompleted(backup *backups_core.Backup, sizeBytes int64) {
@@ -562,6 +583,31 @@ func (s *PostgreWalBackupService) markCompleted(backup *backups_core.Backup, siz
 	}
 }
 
+func (s *PostgreWalBackupService) startProgressTracker(
+	backup *backups_core.Backup,
+	inputCounter *countingReader,
+	uploadStart time.Time,
+	done <-chan struct{},
+) {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			backup.BackupDurationMs = time.Since(uploadStart).Milliseconds()
+			backup.BackupSizeMb = float64(inputCounter.n.Load()) / (1024 * 1024)
+
+			if err := s.backupRepository.Save(backup); err != nil {
+				s.logger.Error("failed to update backup progress",
+					"backupId", backup.ID, "error", err)
+			}
+		}
+	}
+}
+
 func (s *PostgreWalBackupService) markFailed(backup *backups_core.Backup, errMsg string) {
 	backup.Status = backups_core.BackupStatusFailed
 	backup.FailMessage = &errMsg
@@ -575,11 +621,32 @@ func (s *PostgreWalBackupService) resolveFullBackup(
 	databaseID uuid.UUID,
 	backupID *uuid.UUID,
 ) (*backups_core.Backup, error) {
-	if backupID != nil {
-		return s.backupRepository.FindCompletedFullWalBackupByID(databaseID, *backupID)
+	if backupID == nil {
+		return s.backupRepository.FindLastCompletedFullWalBackupByDatabaseID(databaseID)
 	}
 
-	return s.backupRepository.FindLastCompletedFullWalBackupByDatabaseID(databaseID)
+	fullBackup, err := s.backupRepository.FindCompletedFullWalBackupByID(databaseID, *backupID)
+	if err != nil {
+		return nil, err
+	}
+
+	if fullBackup != nil {
+		return fullBackup, nil
+	}
+
+	backup, err := s.backupRepository.FindByID(*backupID)
+	if err != nil {
+		return nil, nil
+	}
+
+	if backup.DatabaseID != databaseID ||
+		backup.Status != backups_core.BackupStatusCompleted ||
+		backup.PgWalBackupType == nil ||
+		*backup.PgWalBackupType != backups_core.PgWalBackupTypeWalSegment {
+		return nil, nil
+	}
+
+	return s.backupRepository.FindLatestCompletedFullWalBackupBefore(databaseID, backup.CreatedAt)
 }
 
 func (s *PostgreWalBackupService) validateRestoreWalChain(
@@ -667,12 +734,12 @@ func (s *PostgreWalBackupService) validateWalBackupType(database *databases.Data
 
 type countingReader struct {
 	r io.Reader
-	n int64
+	n atomic.Int64
 }
 
-func (cr *countingReader) Read(p []byte) (n int, err error) {
-	n, err = cr.r.Read(p)
-	cr.n += int64(n)
+func (cr *countingReader) Read(p []byte) (int, error) {
+	n, err := cr.r.Read(p)
+	cr.n.Add(int64(n))
 
 	return n, err
 }

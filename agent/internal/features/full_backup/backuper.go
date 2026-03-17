@@ -38,8 +38,9 @@ type CmdBuilder func(ctx context.Context) *exec.Cmd
 // On failure the error is reported to the server and the backup retries after 1 minute, indefinitely.
 // WAL segment uploads (handled by wal.Streamer) continue independently and are not paused.
 //
-// pg_basebackup runs as "pg_basebackup -Ft -D - -X none --verbose". Stdout (tar) is zstd-compressed
-// and uploaded to the server. Stderr is parsed for WAL start/stop segment names (LSN → segment arithmetic).
+// pg_basebackup runs as "pg_basebackup -Ft -D - -X fetch --verbose --checkpoint=fast".
+// Stdout (tar) is zstd-compressed and uploaded to the server.
+// Stderr is parsed for WAL start/stop segment names (LSN → segment arithmetic).
 type FullBackuper struct {
 	cfg        *config.Config
 	apiClient  *api.Client
@@ -185,6 +186,11 @@ func (backuper *FullBackuper) executeAndUploadBasebackup(ctx context.Context) er
 	cmdErr := cmd.Wait()
 
 	if uploadErr != nil {
+		stderrStr := stderrBuf.String()
+		if stderrStr != "" {
+			return fmt.Errorf("upload basebackup: %w (pg_basebackup stderr: %s)", uploadErr, stderrStr)
+		}
+
 		return fmt.Errorf("upload basebackup: %w", uploadErr)
 	}
 
@@ -192,7 +198,7 @@ func (backuper *FullBackuper) executeAndUploadBasebackup(ctx context.Context) er
 		errMsg := fmt.Sprintf("pg_basebackup exited with error: %v (stderr: %s)", cmdErr, stderrBuf.String())
 		_ = backuper.apiClient.FinalizeBasebackupWithError(ctx, uploadResp.BackupID, errMsg)
 
-		return fmt.Errorf("pg_basebackup: %w", cmdErr)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	// Phase 2: Parse stderr for WAL segments and finalize the backup.
@@ -266,7 +272,7 @@ func (backuper *FullBackuper) buildHostCmd(ctx context.Context) *exec.Cmd {
 	}
 
 	cmd := exec.CommandContext(ctx, binary,
-		"-Ft", "-D", "-", "-X", "none", "--verbose",
+		"-Ft", "-D", "-", "-X", "fetch", "--verbose", "--checkpoint=fast",
 		"-h", backuper.cfg.PgHost,
 		"-p", fmt.Sprintf("%d", backuper.cfg.PgPort),
 		"-U", backuper.cfg.PgUser,
@@ -282,9 +288,9 @@ func (backuper *FullBackuper) buildDockerCmd(ctx context.Context) *exec.Cmd {
 		"-e", "PGPASSWORD="+backuper.cfg.PgPassword,
 		"-i", backuper.cfg.PgDockerContainerName,
 		"pg_basebackup",
-		"-Ft", "-D", "-", "-X", "none", "--verbose",
-		"-h", backuper.cfg.PgHost,
-		"-p", fmt.Sprintf("%d", backuper.cfg.PgPort),
+		"-Ft", "-D", "-", "-X", "fetch", "--verbose", "--checkpoint=fast",
+		"-h", "localhost",
+		"-p", "5432",
 		"-U", backuper.cfg.PgUser,
 	)
 

@@ -183,6 +183,12 @@ func (d *Database) Update(incoming *Database) {
 	}
 }
 
+func (d *Database) IsAgentManagedBackup() bool {
+	return d.Type == DatabaseTypePostgres &&
+		d.Postgresql != nil &&
+		d.Postgresql.BackupType == postgresql.PostgresBackupTypeWalV1
+}
+
 func (d *Database) getSpecificDatabase() DatabaseConnector {
 	switch d.Type {
 	case DatabaseTypePostgres:

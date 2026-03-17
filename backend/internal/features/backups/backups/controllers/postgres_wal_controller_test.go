@@ -938,6 +938,42 @@ func Test_GetRestorePlan_WithInvalidBackupId_Returns400(t *testing.T) {
 	assert.Equal(t, "no_backups", errResp.Error)
 }
 
+func Test_GetRestorePlan_WithWalSegmentId_ResolvesFullBackupAndReturnsWals(t *testing.T) {
+	router, db, storage, agentToken, _ := createWalTestSetup(t)
+	defer removeWalTestSetup(db, storage)
+
+	uploadBasebackup(t, router, agentToken, "000000010000000100000001", "000000010000000100000010")
+	uploadWalSegment(t, router, agentToken, "000000010000000100000011")
+	uploadWalSegment(t, router, agentToken, "000000010000000100000012")
+	uploadWalSegment(t, router, agentToken, "000000010000000100000013")
+
+	WaitForBackupCompletion(t, db.ID, 3, 5*time.Second)
+
+	walSegment, err := backups_core.GetBackupRepository().FindWalSegmentByName(
+		db.ID, "000000010000000100000012",
+	)
+	require.NoError(t, err)
+	require.NotNil(t, walSegment)
+
+	var response backups_dto.GetRestorePlanResponse
+	test_utils.MakeGetRequestAndUnmarshal(
+		t, router,
+		"/api/v1/backups/postgres/wal/restore/plan?backupId="+walSegment.ID.String(),
+		agentToken,
+		http.StatusOK,
+		&response,
+	)
+
+	assert.NotEqual(t, uuid.Nil, response.FullBackup.BackupID)
+	assert.Equal(t, "000000010000000100000001", response.FullBackup.FullBackupWalStartSegment)
+	assert.Equal(t, "000000010000000100000010", response.FullBackup.FullBackupWalStopSegment)
+	require.Len(t, response.WalSegments, 3)
+	assert.Equal(t, "000000010000000100000011", response.WalSegments[0].SegmentName)
+	assert.Equal(t, "000000010000000100000012", response.WalSegments[1].SegmentName)
+	assert.Equal(t, "000000010000000100000013", response.WalSegments[2].SegmentName)
+	assert.Greater(t, response.TotalSizeBytes, int64(0))
+}
+
 func Test_GetRestorePlan_WithInvalidToken_Returns401(t *testing.T) {
 	router, db, storage, _, _ := createWalTestSetup(t)
 	defer removeWalTestSetup(db, storage)
@@ -993,6 +1029,140 @@ func Test_GetRestorePlan_WithInvalidBackupIdFormat_Returns400(t *testing.T) {
 	)
 
 	assert.Contains(t, string(resp.Body), "invalid backupId format")
+}
+
+func Test_WalUpload_WalSegment_CompletedBackup_HasNonZeroDuration(t *testing.T) {
+	router, db, storage, agentToken, _ := createWalTestSetup(t)
+	defer removeWalTestSetup(db, storage)
+
+	uploadBasebackup(t, router, agentToken, "000000010000000100000001", "000000010000000100000010")
+	uploadWalSegment(t, router, agentToken, "000000010000000100000011")
+
+	WaitForBackupCompletion(t, db.ID, 1, 5*time.Second)
+
+	backups, err := backups_core.GetBackupRepository().FindByDatabaseID(db.ID)
+	require.NoError(t, err)
+
+	var walBackup *backups_core.Backup
+	for _, b := range backups {
+		if b.PgWalBackupType != nil &&
+			*b.PgWalBackupType == backups_core.PgWalBackupTypeWalSegment {
+			walBackup = b
+			break
+		}
+	}
+
+	require.NotNil(t, walBackup)
+	assert.Equal(t, backups_core.BackupStatusCompleted, walBackup.Status)
+	assert.Greater(t, walBackup.BackupDurationMs, int64(0),
+		"WAL segment backup should have non-zero duration")
+}
+
+func Test_WalUpload_Basebackup_CompletedBackup_HasNonZeroDuration(t *testing.T) {
+	router, db, storage, agentToken, _ := createWalTestSetup(t)
+	defer removeWalTestSetup(db, storage)
+
+	backupID := uploadBasebackupPhase1(t, router, agentToken)
+	completeFullBackupUpload(t, router, agentToken, backupID,
+		"000000010000000100000001", "000000010000000100000010", nil)
+
+	backup, err := backups_core.GetBackupRepository().FindByID(backupID)
+	require.NoError(t, err)
+	assert.Equal(t, backups_core.BackupStatusCompleted, backup.Status)
+	assert.Greater(t, backup.BackupDurationMs, int64(0),
+		"base backup should have non-zero duration")
+}
+
+func Test_WalUpload_WalSegment_ProgressUpdatedDuringStream(t *testing.T) {
+	router, db, storage, agentToken, _ := createWalTestSetup(t)
+	defer removeWalTestSetup(db, storage)
+
+	uploadBasebackup(t, router, agentToken, "000000010000000100000001", "000000010000000100000010")
+
+	pipeReader, pipeWriter := io.Pipe()
+	req := newWalSegmentUploadRequest(pipeReader, agentToken, "000000010000000100000011")
+
+	recorder := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		router.ServeHTTP(recorder, req)
+		close(done)
+	}()
+
+	// Write some data so the countingReader registers bytes.
+	_, err := pipeWriter.Write([]byte("wal-segment-progress-data"))
+	require.NoError(t, err)
+
+	// Wait for the progress tracker to tick (1s interval + margin).
+	time.Sleep(1500 * time.Millisecond)
+
+	backups, err := backups_core.GetBackupRepository().FindByDatabaseID(db.ID)
+	require.NoError(t, err)
+
+	var walBackup *backups_core.Backup
+	for _, b := range backups {
+		if b.PgWalBackupType != nil &&
+			*b.PgWalBackupType == backups_core.PgWalBackupTypeWalSegment {
+			walBackup = b
+			break
+		}
+	}
+
+	require.NotNil(t, walBackup)
+	assert.Equal(t, backups_core.BackupStatusInProgress, walBackup.Status)
+	assert.Greater(t, walBackup.BackupDurationMs, int64(0),
+		"duration should be tracked in real-time during upload")
+	assert.Greater(t, walBackup.BackupSizeMb, float64(0),
+		"size should be tracked in real-time during upload")
+
+	_ = pipeWriter.Close()
+	<-done
+}
+
+func Test_WalUpload_Basebackup_ProgressUpdatedDuringStream(t *testing.T) {
+	router, db, storage, agentToken, _ := createWalTestSetup(t)
+	defer removeWalTestSetup(db, storage)
+
+	pipeReader, pipeWriter := io.Pipe()
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/backups/postgres/wal/upload/full-start", pipeReader)
+	req.Header.Set("Authorization", agentToken)
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	recorder := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		router.ServeHTTP(recorder, req)
+		close(done)
+	}()
+
+	// Write some data so the countingReader registers bytes.
+	_, err := pipeWriter.Write([]byte("basebackup-progress-data"))
+	require.NoError(t, err)
+
+	// Wait for the progress tracker to tick (1s interval + margin).
+	time.Sleep(1500 * time.Millisecond)
+
+	backups, err := backups_core.GetBackupRepository().FindByDatabaseID(db.ID)
+	require.NoError(t, err)
+
+	var fullBackup *backups_core.Backup
+	for _, b := range backups {
+		if b.PgWalBackupType != nil &&
+			*b.PgWalBackupType == backups_core.PgWalBackupTypeFullBackup {
+			fullBackup = b
+			break
+		}
+	}
+
+	require.NotNil(t, fullBackup)
+	assert.Equal(t, backups_core.BackupStatusInProgress, fullBackup.Status)
+	assert.Greater(t, fullBackup.BackupDurationMs, int64(0),
+		"duration should be tracked in real-time during upload")
+	assert.Greater(t, fullBackup.BackupSizeMb, float64(0),
+		"size should be tracked in real-time during upload")
+
+	_ = pipeWriter.Close()
+	<-done
 }
 
 func Test_DownloadRestoreFile_UploadThenDownload_ContentMatches(t *testing.T) {

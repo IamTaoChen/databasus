@@ -14,7 +14,19 @@ services:
       POSTGRES_USER: testuser
       POSTGRES_PASSWORD: testpassword
     container_name: e2e-agent-postgres
-    command: postgres -c wal_level=replica -c max_wal_senders=3
+    command:
+      - bash
+      - -c
+      - |
+        mkdir -p /wal-queue && chown postgres:postgres /wal-queue
+        exec docker-entrypoint.sh postgres \
+          -c wal_level=replica \
+          -c max_wal_senders=3 \
+          -c archive_mode=on \
+          -c "archive_command=cp %p /wal-queue/%f"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+      - wal-queue:/wal-queue
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
       interval: 2s
@@ -27,6 +39,7 @@ services:
       dockerfile: Dockerfile.mock-server
     volumes:
       - ./artifacts:/artifacts:ro
+      - backup-storage:/backup-storage
     container_name: e2e-mock-server
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:4050/health"]
@@ -57,8 +70,15 @@ services:
       - ./artifacts:/opt/agent/artifacts:ro
       - ./scripts:/opt/agent/scripts:ro
       - /var/run/docker.sock:/var/run/docker.sock
+      - wal-queue:/wal-queue
     depends_on:
       e2e-postgres:
         condition: service_healthy
+      e2e-mock-server:
+        condition: service_healthy
     container_name: e2e-agent-docker
     command: ["bash", "/opt/agent/scripts/run-all.sh", "docker"]
+
+volumes:
+  wal-queue:
+  backup-storage:

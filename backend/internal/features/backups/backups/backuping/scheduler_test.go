@@ -1,6 +1,7 @@
 package backuping
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -19,6 +20,128 @@ import (
 	cache_utils "databasus-backend/internal/util/cache"
 	"databasus-backend/internal/util/period"
 )
+
+func Test_RunPendingBackups_ByDatabaseType_OnlySchedulesNonAgentManagedBackups(t *testing.T) {
+	type testCase struct {
+		name              string
+		createDatabase    func(workspaceID uuid.UUID, storage *storages.Storage, notifier *notifiers.Notifier) *databases.Database
+		isBackupExpected  bool
+		needsBackuperNode bool
+	}
+
+	testCases := []testCase{
+		{
+			name: "PostgreSQL PG_DUMP - backup runs",
+			createDatabase: func(workspaceID uuid.UUID, storage *storages.Storage, notifier *notifiers.Notifier) *databases.Database {
+				return databases.CreateTestDatabase(workspaceID, storage, notifier)
+			},
+			isBackupExpected:  true,
+			needsBackuperNode: true,
+		},
+		{
+			name: "PostgreSQL WAL_V1 - backup skipped (agent-managed)",
+			createDatabase: func(workspaceID uuid.UUID, _ *storages.Storage, notifier *notifiers.Notifier) *databases.Database {
+				return databases.CreateTestPostgresWalDatabase(workspaceID, notifier)
+			},
+			isBackupExpected:  false,
+			needsBackuperNode: false,
+		},
+		{
+			name: "MariaDB - backup runs",
+			createDatabase: func(workspaceID uuid.UUID, _ *storages.Storage, notifier *notifiers.Notifier) *databases.Database {
+				return databases.CreateTestMariadbDatabase(workspaceID, notifier)
+			},
+			isBackupExpected:  true,
+			needsBackuperNode: true,
+		},
+		{
+			name: "MongoDB - backup runs",
+			createDatabase: func(workspaceID uuid.UUID, _ *storages.Storage, notifier *notifiers.Notifier) *databases.Database {
+				return databases.CreateTestMongodbDatabase(workspaceID, notifier)
+			},
+			isBackupExpected:  true,
+			needsBackuperNode: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cache_utils.ClearAllCache()
+
+			var backuperNode *BackuperNode
+			var cancel context.CancelFunc
+
+			if tc.needsBackuperNode {
+				backuperNode = CreateTestBackuperNode()
+				cancel = StartBackuperNodeForTest(t, backuperNode)
+				defer StopBackuperNodeForTest(t, cancel, backuperNode)
+			}
+
+			user := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+			router := CreateTestRouter()
+			workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", user, router)
+			storage := storages.CreateTestStorage(workspace.ID)
+			notifier := notifiers.CreateTestNotifier(workspace.ID)
+			database := tc.createDatabase(workspace.ID, storage, notifier)
+
+			defer func() {
+				backups, _ := backupRepository.FindByDatabaseID(database.ID)
+				for _, backup := range backups {
+					backupRepository.DeleteByID(backup.ID)
+				}
+
+				databases.RemoveTestDatabase(database)
+				time.Sleep(50 * time.Millisecond)
+				storages.RemoveTestStorage(storage.ID)
+				notifiers.RemoveTestNotifier(notifier)
+				workspaces_testing.RemoveTestWorkspace(workspace, router)
+			}()
+
+			backupConfig, err := backups_config.GetBackupConfigService().GetBackupConfigByDbId(database.ID)
+			assert.NoError(t, err)
+
+			timeOfDay := "04:00"
+			backupConfig.BackupInterval = &intervals.Interval{
+				Interval:  intervals.IntervalDaily,
+				TimeOfDay: &timeOfDay,
+			}
+			backupConfig.IsBackupsEnabled = true
+			backupConfig.RetentionPolicyType = backups_config.RetentionPolicyTypeTimePeriod
+			backupConfig.RetentionTimePeriod = period.PeriodWeek
+			backupConfig.Storage = storage
+			backupConfig.StorageID = &storage.ID
+
+			_, err = backups_config.GetBackupConfigService().SaveBackupConfig(backupConfig)
+			assert.NoError(t, err)
+
+			// add old backup (24h ago)
+			backupRepository.Save(&backups_core.Backup{
+				DatabaseID: database.ID,
+				StorageID:  storage.ID,
+				Status:     backups_core.BackupStatusCompleted,
+				CreatedAt:  time.Now().UTC().Add(-24 * time.Hour),
+			})
+
+			GetBackupsScheduler().runPendingBackups()
+
+			if tc.isBackupExpected {
+				WaitForBackupCompletion(t, database.ID, 1, 10*time.Second)
+
+				backups, err := backupRepository.FindByDatabaseID(database.ID)
+				assert.NoError(t, err)
+				assert.Len(t, backups, 2)
+			} else {
+				time.Sleep(100 * time.Millisecond)
+
+				backups, err := backupRepository.FindByDatabaseID(database.ID)
+				assert.NoError(t, err)
+				assert.Len(t, backups, 1)
+			}
+
+			time.Sleep(200 * time.Millisecond)
+		})
+	}
+}
 
 func Test_RunPendingBackups_WhenLastBackupWasYesterday_CreatesNewBackup(t *testing.T) {
 	cache_utils.ClearAllCache()

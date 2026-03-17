@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 
 	"databasus-agent/internal/config"
 	"databasus-agent/internal/features/api"
+	"databasus-agent/internal/features/restore"
 	"databasus-agent/internal/features/start"
 	"databasus-agent/internal/features/upgrade"
 	"databasus-agent/internal/logger"
@@ -115,10 +117,9 @@ func runStatus() {
 func runRestore(args []string) {
 	fs := flag.NewFlagSet("restore", flag.ExitOnError)
 
-	targetDir := fs.String("target-dir", "", "Target pgdata directory")
+	pgDataDir := fs.String("pgdata", "", "Target pgdata directory (required)")
 	backupID := fs.String("backup-id", "", "Full backup UUID (optional)")
 	targetTime := fs.String("target-time", "", "PITR target time in RFC3339 (optional)")
-	isYes := fs.Bool("yes", false, "Skip confirmation prompt")
 	isSkipUpdate := fs.Bool("skip-update", false, "Skip auto-update check")
 
 	cfg := &config.Config{}
@@ -133,12 +134,24 @@ func runRestore(args []string) {
 	isDev := checkIsDevelopment()
 	runUpdateCheck(cfg.DatabasusHost, *isSkipUpdate, isDev, log)
 
-	log.Info("restore: stub — not yet implemented",
-		"targetDir", *targetDir,
-		"backupId", *backupID,
-		"targetTime", *targetTime,
-		"yes", *isYes,
-	)
+	if *pgDataDir == "" {
+		fmt.Fprintln(os.Stderr, "Error: --pgdata is required")
+		os.Exit(1)
+	}
+
+	if cfg.DatabasusHost == "" || cfg.Token == "" {
+		fmt.Fprintln(os.Stderr, "Error: databasus-host and token must be configured")
+		os.Exit(1)
+	}
+
+	apiClient := api.NewClient(cfg.DatabasusHost, cfg.Token, log)
+	restorer := restore.NewRestorer(apiClient, log, *pgDataDir, *backupID, *targetTime)
+
+	ctx := context.Background()
+	if err := restorer.Run(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func printUsage() {

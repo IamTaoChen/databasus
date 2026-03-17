@@ -5,6 +5,7 @@ export type { Backup } from './model/Backup';
 export type { BackupConfig } from './model/BackupConfig';
 export { BackupNotificationType } from './model/BackupNotificationType';
 export { BackupEncryption } from './model/BackupEncryption';
+export { PgWalBackupType } from './model/PgWalBackupType';
 export { RetentionPolicyType } from './model/RetentionPolicyType';
 export type { TransferDatabaseRequest } from './model/TransferDatabaseRequest';
 export type { DatabasePlan } from '../plan';

@@ -10,7 +10,7 @@ import (
 const defaultWalSegmentSize uint32 = 16 * 1024 * 1024 // 16 MB
 
 var (
-	startLSNRegex = regexp.MustCompile(`checkpoint redo point at ([0-9A-Fa-f]+/[0-9A-Fa-f]+)`)
+	startLSNRegex = regexp.MustCompile(`write-ahead log start point: ([0-9A-Fa-f]+/[0-9A-Fa-f]+)`)
 	stopLSNRegex  = regexp.MustCompile(`write-ahead log end point: ([0-9A-Fa-f]+/[0-9A-Fa-f]+)`)
 )
 

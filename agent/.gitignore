@@ -24,3 +24,4 @@ victoria-logs-data/
 databasus.json
 .test-tmp/
 databasus.log
+wal-queue/

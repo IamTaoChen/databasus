@@ -1,7 +1,12 @@
 import { Modal } from 'antd';
 import { useState } from 'react';
 
-import { type Database, DatabaseType, databaseApi } from '../../../../entity/databases';
+import {
+  type Database,
+  DatabaseType,
+  PostgresBackupType,
+  databaseApi,
+} from '../../../../entity/databases';
 import { CreateReadOnlyComponent } from './CreateReadOnlyComponent';
 import { EditMariaDbSpecificDataComponent } from './EditMariaDbSpecificDataComponent';
 import { EditMongoDbSpecificDataComponent } from './EditMongoDbSpecificDataComponent';
@@ -47,6 +52,15 @@ export const EditDatabaseSpecificDataComponent = ({
     setEditingDatabase(databaseToSave);
 
     if (!isSaveToApi) {
+      onSaved(databaseToSave);
+      return;
+    }
+
+    const isWalBackup =
+      databaseToSave.type === DatabaseType.POSTGRES &&
+      databaseToSave.postgresql?.backupType === PostgresBackupType.WAL_V1;
+
+    if (isWalBackup) {
       onSaved(databaseToSave);
       return;
     }

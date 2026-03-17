@@ -349,6 +349,34 @@ func (r *BackupRepository) FindWalSegmentByName(
 	return &backup, nil
 }
 
+func (r *BackupRepository) FindLatestCompletedFullWalBackupBefore(
+	databaseID uuid.UUID,
+	before time.Time,
+) (*Backup, error) {
+	var backup Backup
+
+	err := storage.
+		GetDb().
+		Where(
+			"database_id = ? AND pg_wal_backup_type = ? AND status = ? AND created_at <= ?",
+			databaseID,
+			PgWalBackupTypeFullBackup,
+			BackupStatusCompleted,
+			before,
+		).
+		Order("created_at DESC").
+		First(&backup).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return &backup, nil
+}
+
 func (r *BackupRepository) FindStaleUploadedBasebackups(olderThan time.Time) ([]*Backup, error) {
 	var backups []*Backup
 

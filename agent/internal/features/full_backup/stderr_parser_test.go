@@ -7,12 +7,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_ParseBasebackupStderr_WithPG17Output_ExtractsCorrectSegments(t *testing.T) {
+func Test_ParseBasebackupStderr_WithPG17FetchOutput_ExtractsCorrectSegments(t *testing.T) {
 	stderr := `pg_basebackup: initiating base backup, waiting for checkpoint to complete
 pg_basebackup: checkpoint completed
-pg_basebackup: write-ahead log start point: 0/2000028, on timeline 1
+pg_basebackup: write-ahead log start point: 0/2000028 on timeline 1
 pg_basebackup: starting background WAL receiver
-pg_basebackup: checkpoint redo point at 0/2000028
 pg_basebackup: write-ahead log end point: 0/2000100
 pg_basebackup: waiting for background process to finish streaming ...
 pg_basebackup: syncing data to disk ...
@@ -26,13 +25,9 @@ pg_basebackup: base backup completed`
 	assert.Equal(t, "000000010000000000000002", stopSeg)
 }
 
-func Test_ParseBasebackupStderr_WithPG15Output_ExtractsCorrectSegments(t *testing.T) {
-	stderr := `pg_basebackup: initiating base backup, waiting for checkpoint to complete
-pg_basebackup: checkpoint completed
-pg_basebackup: write-ahead log start point: 1/AB000028, on timeline 1
-pg_basebackup: checkpoint redo point at 1/AB000028
-pg_basebackup: write-ahead log end point: 1/AC000000
-pg_basebackup: base backup completed`
+func Test_ParseBasebackupStderr_WithHighLSNValues_ExtractsCorrectSegments(t *testing.T) {
+	stderr := `pg_basebackup: write-ahead log start point: 1/AB000028 on timeline 1
+pg_basebackup: write-ahead log end point: 1/AC000000`
 
 	startSeg, stopSeg, err := ParseBasebackupStderr(stderr)
 
@@ -42,7 +37,7 @@ pg_basebackup: base backup completed`
 }
 
 func Test_ParseBasebackupStderr_WithHighLogID_ExtractsCorrectSegments(t *testing.T) {
-	stderr := `pg_basebackup: checkpoint redo point at A/FF000028
+	stderr := `pg_basebackup: write-ahead log start point: A/FF000028 on timeline 1
 pg_basebackup: write-ahead log end point: B/1000000`
 
 	startSeg, stopSeg, err := ParseBasebackupStderr(stderr)
@@ -63,7 +58,7 @@ pg_basebackup: base backup completed`
 }
 
 func Test_ParseBasebackupStderr_WhenStopLSNMissing_ReturnsError(t *testing.T) {
-	stderr := `pg_basebackup: checkpoint redo point at 0/2000028
+	stderr := `pg_basebackup: write-ahead log start point: 0/2000028 on timeline 1
 pg_basebackup: base backup completed`
 
 	_, _, err := ParseBasebackupStderr(stderr)

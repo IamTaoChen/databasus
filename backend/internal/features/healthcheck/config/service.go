@@ -133,9 +133,20 @@ func (s *HealthcheckConfigService) GetDatabasesWithEnabledHealthcheck() (
 func (s *HealthcheckConfigService) initializeDefaultConfig(
 	databaseID uuid.UUID,
 ) error {
+	isHealthcheckEnabled := true
+
+	database, err := s.databaseService.GetDatabaseByID(databaseID)
+	if err != nil {
+		return err
+	}
+
+	if database.IsAgentManagedBackup() {
+		isHealthcheckEnabled = false
+	}
+
 	return s.healthcheckConfigRepository.Save(&HealthcheckConfig{
 		DatabaseID:                        databaseID,
-		IsHealthcheckEnabled:              true,
+		IsHealthcheckEnabled:              isHealthcheckEnabled,
 		IsSentNotificationWhenUnavailable: true,
 		IntervalMinutes:                   1,
 		AttemptsBeforeConcideredAsDown:    3,

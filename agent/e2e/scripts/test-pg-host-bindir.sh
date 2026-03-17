@@ -1,67 +1,62 @@
 #!/bin/bash
 set -euo pipefail
 
-ARTIFACTS="/opt/agent/artifacts"
-AGENT="/tmp/test-agent"
+SCRIPT_DIR="$(dirname "$0")"
+source "$SCRIPT_DIR/backup-restore-helpers.sh"
+
+MOCK_SERVER="${MOCK_SERVER_OVERRIDE:-http://e2e-mock-server:4050}"
+PGDATA="/tmp/pgdata"
+RESTORE_PGDATA="/tmp/restore-pgdata"
+WAL_QUEUE="/tmp/wal-queue"
+PG_PORT=5433
 CUSTOM_BIN_DIR="/opt/pg/bin"
 
-# Cleanup from previous runs
-pkill -f "test-agent" 2>/dev/null || true
-for i in $(seq 1 20); do
-  pgrep -f "test-agent" > /dev/null 2>&1 || break
-  sleep 0.5
-done
-pkill -9 -f "test-agent" 2>/dev/null || true
-sleep 0.5
-rm -f "$AGENT" "$AGENT.update" databasus.lock databasus.log databasus.log.old databasus.json 2>/dev/null || true
+PG_BIN_DIR=$(find_pg_bin_dir)
+echo "Using PG bin dir: $PG_BIN_DIR"
 
-# Copy agent binary
-cp "$ARTIFACTS/agent-v1" "$AGENT"
-chmod +x "$AGENT"
-
-# Move pg_basebackup out of PATH into custom directory
+# Copy pg_basebackup to a custom directory (simulates non-PATH installation)
 mkdir -p "$CUSTOM_BIN_DIR"
-cp "$(which pg_basebackup)" "$CUSTOM_BIN_DIR/pg_basebackup"
+cp "$PG_BIN_DIR/pg_basebackup" "$CUSTOM_BIN_DIR/pg_basebackup"
 
-# Hide the system one by prepending an empty dir to PATH
-export PATH="/opt/empty-path:$PATH"
-mkdir -p /opt/empty-path
+echo "=== Phase 1: Setup agent ==="
+setup_agent
 
-# Verify pg_basebackup is NOT directly callable from default location
-# (we copied it, but the original is still there in debian — so we test
-# that the agent uses the custom dir, not PATH, by checking the output)
+echo "=== Phase 2: Initialize PostgreSQL ==="
+init_pg_local "$PGDATA" "$PG_PORT" "$WAL_QUEUE" "$PG_BIN_DIR"
 
-# Run start with --skip-update and custom bin dir
-echo "Running agent start (pg_basebackup via --pg-host-bin-dir)..."
-OUTPUT=$("$AGENT" start \
-  --skip-update \
-  --databasus-host http://e2e-mock-server:4050 \
-  --db-id test-db-id \
-  --token test-token \
-  --pg-host e2e-postgres \
-  --pg-port 5432 \
-  --pg-user testuser \
-  --pg-password testpassword \
-  --pg-wal-dir /tmp/wal \
-  --pg-type host \
-  --pg-host-bin-dir "$CUSTOM_BIN_DIR" 2>&1)
+echo "=== Phase 3: Insert test data ==="
+insert_test_data "$PG_PORT" "$PG_BIN_DIR"
 
-EXIT_CODE=$?
-echo "$OUTPUT"
+echo "=== Phase 4: Force checkpoint and start agent backup (using --pg-host-bin-dir) ==="
+force_checkpoint "$PG_PORT" "$PG_BIN_DIR"
+run_agent_backup "$MOCK_SERVER" "127.0.0.1" "$PG_PORT" "$WAL_QUEUE" "host" "$CUSTOM_BIN_DIR"
 
-if [ "$EXIT_CODE" -ne 0 ]; then
-  echo "FAIL: Agent exited with code $EXIT_CODE"
-  exit 1
-fi
+echo "=== Phase 5: Generate WAL in background ==="
+generate_wal_background "$PG_PORT" "$PG_BIN_DIR" &
+WAL_GEN_PID=$!
 
-if ! echo "$OUTPUT" | grep -q "pg_basebackup verified"; then
-  echo "FAIL: Expected output to contain 'pg_basebackup verified'"
-  exit 1
-fi
+echo "=== Phase 6: Wait for backup to complete ==="
+wait_for_backup_complete "$MOCK_SERVER" 120
 
-if ! echo "$OUTPUT" | grep -q "PostgreSQL connection verified"; then
-  echo "FAIL: Expected output to contain 'PostgreSQL connection verified'"
-  exit 1
-fi
+echo "=== Phase 7: Stop WAL generator, agent, and PostgreSQL ==="
+kill $WAL_GEN_PID 2>/dev/null || true
+wait $WAL_GEN_PID 2>/dev/null || true
+stop_agent
+stop_pg "$PGDATA" "$PG_BIN_DIR"
 
-echo "pg_basebackup found via custom bin dir and DB connection verified"
+echo "=== Phase 8: Restore ==="
+run_agent_restore "$MOCK_SERVER" "$RESTORE_PGDATA"
+
+echo "=== Phase 9: Start PostgreSQL on restored data ==="
+start_restored_pg "$RESTORE_PGDATA" "$PG_PORT" "$PG_BIN_DIR"
+
+echo "=== Phase 10: Wait for recovery ==="
+wait_for_recovery_complete "$PG_PORT" "$PG_BIN_DIR" 60
+
+echo "=== Phase 11: Verify data ==="
+verify_restored_data "$PG_PORT" "$PG_BIN_DIR"
+
+echo "=== Phase 12: Cleanup ==="
+stop_pg "$RESTORE_PGDATA" "$PG_BIN_DIR"
+
+echo "pg_basebackup via custom bindir: full backup-restore lifecycle passed"

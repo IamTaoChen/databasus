@@ -1,8 +1,10 @@
+import type { PostgresBackupType } from './PostgresBackupType';
 import type { PostgresqlVersion } from './PostgresqlVersion';
 
 export interface PostgresqlDatabase {
   id: string;
   version: PostgresqlVersion;
+  backupType?: PostgresBackupType;
 
   // connection data
   host: string;

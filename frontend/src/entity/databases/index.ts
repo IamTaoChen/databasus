@@ -3,6 +3,7 @@ export { type Database } from './model/Database';
 export { DatabaseType } from './model/DatabaseType';
 export { getDatabaseLogoFromType } from './model/getDatabaseLogoFromType';
 export { Period } from './model/Period';
+export { PostgresBackupType } from './model/postgresql/PostgresBackupType';
 export { type PostgresqlDatabase } from './model/postgresql/PostgresqlDatabase';
 export { PostgresqlVersion } from './model/postgresql/PostgresqlVersion';
 export { type MysqlDatabase } from './model/mysql/MysqlDatabase';

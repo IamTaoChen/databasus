@@ -1,4 +1,4 @@
-import { type Database, PostgresqlVersion } from '../../../../entity/databases';
+import { type Database, PostgresBackupType, PostgresqlVersion } from '../../../../entity/databases';
 
 interface Props {
   database: Database;
@@ -14,9 +14,19 @@ const postgresqlVersionLabels = {
   [PostgresqlVersion.PostgresqlVersion18]: '18',
 };
 
+const backupTypeLabels: Record<string, string> = {
+  [PostgresBackupType.PG_DUMP]: 'Remote (logical)',
+  [PostgresBackupType.WAL_V1]: 'Agent (physical)',
+};
+
 export const ShowPostgreSqlSpecificDataComponent = ({ database }: Props) => {
-  return (
-    <div>
+  const backupType = database.postgresql?.backupType;
+  const backupTypeLabel = backupType
+    ? (backupTypeLabels[backupType] ?? backupType)
+    : 'Remote (pg_dump)';
+
+  const renderPgDumpDetails = () => (
+    <>
       <div className="mb-1 flex w-full items-center">
         <div className="min-w-[150px]">PG version</div>
         <div>
@@ -60,6 +70,37 @@ export const ShowPostgreSqlSpecificDataComponent = ({ database }: Props) => {
           <div>{database.postgresql.includeSchemas.join(', ')}</div>
         </div>
       )}
+    </>
+  );
+
+  const renderWalDetails = () => (
+    <>
+      {database.postgresql?.version && (
+        <div className="mb-1 flex w-full items-center">
+          <div className="min-w-[150px]">PG version</div>
+          <div>{postgresqlVersionLabels[database.postgresql.version]}</div>
+        </div>
+      )}
+    </>
+  );
+
+  const renderDetails = () => {
+    switch (backupType) {
+      case PostgresBackupType.WAL_V1:
+        return renderWalDetails();
+      default:
+        return renderPgDumpDetails();
+    }
+  };
+
+  return (
+    <div>
+      <div className="mb-1 flex w-full items-center">
+        <div className="min-w-[150px]">Backup type</div>
+        <div>{backupTypeLabel}</div>
+      </div>
+
+      {renderDetails()}
     </div>
   );
 };

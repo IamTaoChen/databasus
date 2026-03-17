@@ -342,6 +342,10 @@ func (s *BackupsScheduler) runPendingBackups() error {
 				continue
 			}
 
+			if database.IsAgentManagedBackup() {
+				continue
+			}
+
 			s.StartBackup(database, remainedBackupTryCount == 1)
 			continue
 		}

@@ -3,7 +3,7 @@ import { App, Button, Checkbox, Input, InputNumber, Select, Switch, Tooltip } fr
 import { useEffect, useState } from 'react';
 
 import { IS_CLOUD } from '../../../../constants';
-import { type Database, databaseApi } from '../../../../entity/databases';
+import { type Database, PostgresBackupType, databaseApi } from '../../../../entity/databases';
 import { ConnectionStringParser } from '../../../../entity/databases/model/postgresql/ConnectionStringParser';
 import { ToastHelper } from '../../../../shared/toast';
 
@@ -185,341 +185,424 @@ export const EditPostgreSqlSpecificDataComponent = ({
 
   if (!editingDatabase) return null;
 
-  let isAllFieldsFilled = true;
-  if (!editingDatabase.postgresql?.host) isAllFieldsFilled = false;
-  if (!editingDatabase.postgresql?.port) isAllFieldsFilled = false;
-  if (!editingDatabase.postgresql?.username) isAllFieldsFilled = false;
-  if (!editingDatabase.id && !editingDatabase.postgresql?.password) isAllFieldsFilled = false;
-  if (!editingDatabase.postgresql?.database) isAllFieldsFilled = false;
+  const backupType = editingDatabase.postgresql?.backupType;
 
-  const isLocalhostDb =
-    editingDatabase.postgresql?.host?.includes('localhost') ||
-    editingDatabase.postgresql?.host?.includes('127.0.0.1');
+  const renderBackupTypeSelector = () => {
+    if (editingDatabase.id || IS_CLOUD) return null;
 
-  const isSupabaseDb =
-    editingDatabase.postgresql?.host?.includes('supabase') ||
-    editingDatabase.postgresql?.username?.includes('supabase');
-
-  return (
-    <div>
-      <div className="mb-3 flex">
-        <div className="min-w-[150px]" />
-        <div
-          className="cursor-pointer text-sm text-gray-600 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
-          onClick={parseFromClipboard}
-        >
-          <CopyOutlined className="mr-1" />
-          Parse from clipboard
-        </div>
-      </div>
-
-      <div className="mb-1 flex w-full items-center">
-        <div className="min-w-[150px]">Host</div>
-        <Input
-          value={editingDatabase.postgresql?.host}
-          onChange={(e) => {
-            if (!editingDatabase.postgresql) return;
-
-            const updatedDatabase = {
-              ...editingDatabase,
-              postgresql: {
-                ...editingDatabase.postgresql,
-                host: e.target.value.trim().replace('https://', '').replace('http://', ''),
-              },
-            };
-            setEditingDatabase(autoAddPublicSchemaForSupabase(updatedDatabase));
-            setIsConnectionTested(false);
-          }}
-          size="small"
-          className="max-w-[200px] grow"
-          placeholder="Enter PG host"
-        />
-      </div>
-
-      {isLocalhostDb && !IS_CLOUD && (
-        <div className="mb-1 flex">
-          <div className="min-w-[150px]" />
-          <div className="max-w-[200px] text-xs text-gray-500 dark:text-gray-400">
-            Please{' '}
-            <a
-              href="https://databasus.com/faq/localhost"
-              target="_blank"
-              rel="noreferrer"
-              className="!text-blue-600 dark:!text-blue-400"
-            >
-              read this document
-            </a>{' '}
-            to study how to backup local database
-          </div>
-        </div>
-      )}
-
-      {isSupabaseDb && (
-        <div className="mb-1 flex">
-          <div className="min-w-[150px]" />
-          <div className="max-w-[200px] text-xs text-gray-500 dark:text-gray-400">
-            Please{' '}
-            <a
-              href="https://databasus.com/faq/supabase"
-              target="_blank"
-              rel="noreferrer"
-              className="!text-blue-600 dark:!text-blue-400"
-            >
-              read this document
-            </a>{' '}
-            to study how to backup Supabase database
-          </div>
-        </div>
-      )}
-
-      <div className="mb-1 flex w-full items-center">
-        <div className="min-w-[150px]">Port</div>
-        <InputNumber
-          type="number"
-          value={editingDatabase.postgresql?.port}
-          onChange={(e) => {
-            if (!editingDatabase.postgresql || e === null) return;
-
-            setEditingDatabase({
-              ...editingDatabase,
-              postgresql: { ...editingDatabase.postgresql, port: e },
-            });
-            setIsConnectionTested(false);
-          }}
-          size="small"
-          className="max-w-[200px] grow"
-          placeholder="Enter PG port"
-        />
-      </div>
-
-      <div className="mb-1 flex w-full items-center">
-        <div className="min-w-[150px]">Username</div>
-        <Input
-          value={editingDatabase.postgresql?.username}
-          onChange={(e) => {
-            if (!editingDatabase.postgresql) return;
-
-            const updatedDatabase = {
-              ...editingDatabase,
-              postgresql: { ...editingDatabase.postgresql, username: e.target.value.trim() },
-            };
-            setEditingDatabase(autoAddPublicSchemaForSupabase(updatedDatabase));
-            setIsConnectionTested(false);
-          }}
-          size="small"
-          className="max-w-[200px] grow"
-          placeholder="Enter PG username"
-        />
-      </div>
-
-      <div className="mb-1 flex w-full items-center">
-        <div className="min-w-[150px]">Password</div>
-        <Input.Password
-          value={editingDatabase.postgresql?.password}
-          onChange={(e) => {
+    return (
+      <div className="mb-3 flex w-full items-center">
+        <div className="min-w-[150px]">Backup type</div>
+        <Select
+          value={
+            backupType === PostgresBackupType.WAL_V1
+              ? PostgresBackupType.WAL_V1
+              : PostgresBackupType.PG_DUMP
+          }
+          onChange={(value: PostgresBackupType) => {
             if (!editingDatabase.postgresql) return;
 
             setEditingDatabase({
               ...editingDatabase,
-              postgresql: { ...editingDatabase.postgresql, password: e.target.value },
+              postgresql: { ...editingDatabase.postgresql, backupType: value },
             });
             setIsConnectionTested(false);
           }}
+          options={[
+            { label: 'Remote (recommended)', value: PostgresBackupType.PG_DUMP },
+            { label: 'Agent (incremental)', value: PostgresBackupType.WAL_V1 },
+          ]}
           size="small"
-          className="max-w-[200px] grow"
-          placeholder="Enter PG password"
-          autoComplete="off"
-          data-1p-ignore
-          data-lpignore="true"
-          data-form-type="other"
+          className="min-w-[200px]"
         />
       </div>
+    );
+  };
 
-      {isShowDbName && (
+  const renderFooter = (footerContent?: React.ReactNode) => (
+    <div className="mt-5 flex">
+      {isShowCancelButton && (
+        <Button className="mr-1" danger ghost onClick={() => onCancel()}>
+          Cancel
+        </Button>
+      )}
+
+      {isShowBackButton && (
+        <Button className="mr-auto" type="primary" ghost onClick={() => onBack()}>
+          Back
+        </Button>
+      )}
+
+      {footerContent}
+    </div>
+  );
+
+  const renderPgDumpForm = () => {
+    let isAllFieldsFilled = true;
+    if (!editingDatabase.postgresql?.host) isAllFieldsFilled = false;
+    if (!editingDatabase.postgresql?.port) isAllFieldsFilled = false;
+    if (!editingDatabase.postgresql?.username) isAllFieldsFilled = false;
+    if (!editingDatabase.id && !editingDatabase.postgresql?.password) isAllFieldsFilled = false;
+    if (!editingDatabase.postgresql?.database) isAllFieldsFilled = false;
+
+    const isLocalhostDb =
+      editingDatabase.postgresql?.host?.includes('localhost') ||
+      editingDatabase.postgresql?.host?.includes('127.0.0.1');
+
+    const isSupabaseDb =
+      editingDatabase.postgresql?.host?.includes('supabase') ||
+      editingDatabase.postgresql?.username?.includes('supabase');
+
+    return (
+      <>
+        <div className="mb-3 flex">
+          <div className="min-w-[150px]" />
+          <div
+            className="cursor-pointer text-sm text-gray-600 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
+            onClick={parseFromClipboard}
+          >
+            <CopyOutlined className="mr-1" />
+            Parse from clipboard
+          </div>
+        </div>
+
         <div className="mb-1 flex w-full items-center">
-          <div className="min-w-[150px]">DB name</div>
+          <div className="min-w-[150px]">Host</div>
           <Input
-            value={editingDatabase.postgresql?.database}
+            value={editingDatabase.postgresql?.host}
             onChange={(e) => {
               if (!editingDatabase.postgresql) return;
 
+              const updatedDatabase = {
+                ...editingDatabase,
+                postgresql: {
+                  ...editingDatabase.postgresql,
+                  host: e.target.value.trim().replace('https://', '').replace('http://', ''),
+                },
+              };
+              setEditingDatabase(autoAddPublicSchemaForSupabase(updatedDatabase));
+              setIsConnectionTested(false);
+            }}
+            size="small"
+            className="max-w-[200px] grow"
+            placeholder="Enter PG host"
+          />
+        </div>
+
+        {isLocalhostDb && !IS_CLOUD && (
+          <div className="mb-1 flex">
+            <div className="min-w-[150px]" />
+            <div className="max-w-[200px] text-xs text-gray-500 dark:text-gray-400">
+              Please{' '}
+              <a
+                href="https://databasus.com/faq/localhost"
+                target="_blank"
+                rel="noreferrer"
+                className="!text-blue-600 dark:!text-blue-400"
+              >
+                read this document
+              </a>{' '}
+              to study how to backup local database
+            </div>
+          </div>
+        )}
+
+        {isSupabaseDb && (
+          <div className="mb-1 flex">
+            <div className="min-w-[150px]" />
+            <div className="max-w-[200px] text-xs text-gray-500 dark:text-gray-400">
+              Please{' '}
+              <a
+                href="https://databasus.com/faq/supabase"
+                target="_blank"
+                rel="noreferrer"
+                className="!text-blue-600 dark:!text-blue-400"
+              >
+                read this document
+              </a>{' '}
+              to study how to backup Supabase database
+            </div>
+          </div>
+        )}
+
+        <div className="mb-1 flex w-full items-center">
+          <div className="min-w-[150px]">Port</div>
+          <InputNumber
+            type="number"
+            value={editingDatabase.postgresql?.port}
+            onChange={(e) => {
+              if (!editingDatabase.postgresql || e === null) return;
+
               setEditingDatabase({
                 ...editingDatabase,
-                postgresql: { ...editingDatabase.postgresql, database: e.target.value.trim() },
+                postgresql: { ...editingDatabase.postgresql, port: e },
               });
               setIsConnectionTested(false);
             }}
             size="small"
             className="max-w-[200px] grow"
-            placeholder="Enter PG database name"
+            placeholder="Enter PG port"
           />
         </div>
-      )}
 
-      <div className="mb-1 flex w-full items-center">
-        <div className="min-w-[150px]">Use HTTPS</div>
-        <Switch
-          checked={editingDatabase.postgresql?.isHttps}
-          onChange={(checked) => {
-            if (!editingDatabase.postgresql) return;
+        <div className="mb-1 flex w-full items-center">
+          <div className="min-w-[150px]">Username</div>
+          <Input
+            value={editingDatabase.postgresql?.username}
+            onChange={(e) => {
+              if (!editingDatabase.postgresql) return;
 
-            setEditingDatabase({
-              ...editingDatabase,
-              postgresql: { ...editingDatabase.postgresql, isHttps: checked },
-            });
-            setIsConnectionTested(false);
-          }}
-          size="small"
-        />
-      </div>
+              const updatedDatabase = {
+                ...editingDatabase,
+                postgresql: { ...editingDatabase.postgresql, username: e.target.value.trim() },
+              };
+              setEditingDatabase(autoAddPublicSchemaForSupabase(updatedDatabase));
+              setIsConnectionTested(false);
+            }}
+            size="small"
+            className="max-w-[200px] grow"
+            placeholder="Enter PG username"
+          />
+        </div>
 
-      {isRestoreMode && !IS_CLOUD && (
-        <div className="mb-5 flex w-full items-center">
-          <div className="min-w-[150px]">CPU count</div>
-          <div className="flex items-center">
-            <InputNumber
-              min={1}
-              max={128}
-              value={editingDatabase.postgresql?.cpuCount}
-              onChange={(value) => {
+        <div className="mb-1 flex w-full items-center">
+          <div className="min-w-[150px]">Password</div>
+          <Input.Password
+            value={editingDatabase.postgresql?.password}
+            onChange={(e) => {
+              if (!editingDatabase.postgresql) return;
+
+              setEditingDatabase({
+                ...editingDatabase,
+                postgresql: { ...editingDatabase.postgresql, password: e.target.value },
+              });
+              setIsConnectionTested(false);
+            }}
+            size="small"
+            className="max-w-[200px] grow"
+            placeholder="Enter PG password"
+            autoComplete="off"
+            data-1p-ignore
+            data-lpignore="true"
+            data-form-type="other"
+          />
+        </div>
+
+        {isShowDbName && (
+          <div className="mb-1 flex w-full items-center">
+            <div className="min-w-[150px]">DB name</div>
+            <Input
+              value={editingDatabase.postgresql?.database}
+              onChange={(e) => {
                 if (!editingDatabase.postgresql) return;
 
                 setEditingDatabase({
                   ...editingDatabase,
-                  postgresql: { ...editingDatabase.postgresql, cpuCount: value || 1 },
+                  postgresql: { ...editingDatabase.postgresql, database: e.target.value.trim() },
                 });
                 setIsConnectionTested(false);
               }}
               size="small"
-              className="max-w-[75px] grow"
+              className="max-w-[200px] grow"
+              placeholder="Enter PG database name"
             />
-
-            <Tooltip
-              className="cursor-pointer"
-              title="Number of CPU cores to use for backup and restore operations. Higher values may speed up operations but use more resources."
-            >
-              <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
-            </Tooltip>
           </div>
+        )}
+
+        <div className="mb-1 flex w-full items-center">
+          <div className="min-w-[150px]">Use HTTPS</div>
+          <Switch
+            checked={editingDatabase.postgresql?.isHttps}
+            onChange={(checked) => {
+              if (!editingDatabase.postgresql) return;
+
+              setEditingDatabase({
+                ...editingDatabase,
+                postgresql: { ...editingDatabase.postgresql, isHttps: checked },
+              });
+              setIsConnectionTested(false);
+            }}
+            size="small"
+          />
         </div>
-      )}
 
-      <div className="mt-4 mb-1 flex items-center">
-        <div
-          className="flex cursor-pointer items-center text-sm text-blue-600 hover:text-blue-800"
-          onClick={() => setShowAdvanced(!isShowAdvanced)}
-        >
-          <span className="mr-2">Advanced settings</span>
-
-          {isShowAdvanced ? (
-            <UpOutlined style={{ fontSize: '12px' }} />
-          ) : (
-            <DownOutlined style={{ fontSize: '12px' }} />
-          )}
-        </div>
-      </div>
-
-      {isShowAdvanced && (
-        <>
-          {!isRestoreMode && (
-            <div className="mb-1 flex w-full items-center">
-              <div className="min-w-[150px]">Include schemas</div>
-              <Select
-                mode="tags"
-                value={editingDatabase.postgresql?.includeSchemas || []}
-                onChange={(values) => {
+        {isRestoreMode && !IS_CLOUD && (
+          <div className="mb-5 flex w-full items-center">
+            <div className="min-w-[150px]">CPU count</div>
+            <div className="flex items-center">
+              <InputNumber
+                min={1}
+                max={128}
+                value={editingDatabase.postgresql?.cpuCount}
+                onChange={(value) => {
                   if (!editingDatabase.postgresql) return;
 
                   setEditingDatabase({
                     ...editingDatabase,
-                    postgresql: { ...editingDatabase.postgresql, includeSchemas: values },
+                    postgresql: { ...editingDatabase.postgresql, cpuCount: value || 1 },
                   });
+                  setIsConnectionTested(false);
                 }}
                 size="small"
-                className="max-w-[200px] grow"
-                placeholder="All schemas (default)"
-                tokenSeparators={[',']}
+                className="max-w-[75px] grow"
               />
-            </div>
-          )}
 
-          {isRestoreMode && (
-            <div className="mb-1 flex w-full items-center">
-              <div className="min-w-[150px]">Exclude extensions</div>
-              <div className="flex items-center">
-                <Checkbox
-                  checked={editingDatabase.postgresql?.isExcludeExtensions || false}
-                  onChange={(e) => {
+              <Tooltip
+                className="cursor-pointer"
+                title="Number of CPU cores to use for backup and restore operations. Higher values may speed up operations but use more resources."
+              >
+                <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
+              </Tooltip>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 mb-1 flex items-center">
+          <div
+            className="flex cursor-pointer items-center text-sm text-blue-600 hover:text-blue-800"
+            onClick={() => setShowAdvanced(!isShowAdvanced)}
+          >
+            <span className="mr-2">Advanced settings</span>
+
+            {isShowAdvanced ? (
+              <UpOutlined style={{ fontSize: '12px' }} />
+            ) : (
+              <DownOutlined style={{ fontSize: '12px' }} />
+            )}
+          </div>
+        </div>
+
+        {isShowAdvanced && (
+          <>
+            {!isRestoreMode && (
+              <div className="mb-1 flex w-full items-center">
+                <div className="min-w-[150px]">Include schemas</div>
+                <Select
+                  mode="tags"
+                  value={editingDatabase.postgresql?.includeSchemas || []}
+                  onChange={(values) => {
                     if (!editingDatabase.postgresql) return;
 
                     setEditingDatabase({
                       ...editingDatabase,
-                      postgresql: {
-                        ...editingDatabase.postgresql,
-                        isExcludeExtensions: e.target.checked,
-                      },
+                      postgresql: { ...editingDatabase.postgresql, includeSchemas: values },
                     });
                   }}
-                >
-                  Skip extensions
-                </Checkbox>
-
-                <Tooltip
-                  className="cursor-pointer"
-                  title="Skip restoring extension definitions (CREATE EXTENSION statements). Enable this if you're restoring to a managed PostgreSQL service where extensions are managed by the provider."
-                >
-                  <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
-                </Tooltip>
+                  size="small"
+                  className="max-w-[200px] grow"
+                  placeholder="All schemas (default)"
+                  tokenSeparators={[',']}
+                />
               </div>
-            </div>
-          )}
-        </>
-      )}
+            )}
 
-      <div className="mt-5 flex">
-        {isShowCancelButton && (
-          <Button className="mr-1" danger ghost onClick={() => onCancel()}>
-            Cancel
-          </Button>
+            {isRestoreMode && (
+              <div className="mb-1 flex w-full items-center">
+                <div className="min-w-[150px]">Exclude extensions</div>
+                <div className="flex items-center">
+                  <Checkbox
+                    checked={editingDatabase.postgresql?.isExcludeExtensions || false}
+                    onChange={(e) => {
+                      if (!editingDatabase.postgresql) return;
+
+                      setEditingDatabase({
+                        ...editingDatabase,
+                        postgresql: {
+                          ...editingDatabase.postgresql,
+                          isExcludeExtensions: e.target.checked,
+                        },
+                      });
+                    }}
+                  >
+                    Skip extensions
+                  </Checkbox>
+
+                  <Tooltip
+                    className="cursor-pointer"
+                    title="Skip restoring extension definitions (CREATE EXTENSION statements). Enable this if you're restoring to a managed PostgreSQL service where extensions are managed by the provider."
+                  >
+                    <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
+                  </Tooltip>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
-        {isShowBackButton && (
-          <Button className="mr-auto" type="primary" ghost onClick={() => onBack()}>
-            Back
-          </Button>
+        {renderFooter(
+          <>
+            {!isConnectionTested && (
+              <Button
+                type="primary"
+                onClick={() => testConnection()}
+                loading={isTestingConnection}
+                disabled={!isAllFieldsFilled}
+                className="mr-5"
+              >
+                Test connection
+              </Button>
+            )}
+
+            {isConnectionTested && (
+              <Button
+                type="primary"
+                onClick={() => saveDatabase()}
+                loading={isSaving}
+                disabled={!isAllFieldsFilled}
+                className="mr-5"
+              >
+                {saveButtonText || 'Save'}
+              </Button>
+            )}
+          </>,
         )}
 
-        {!isConnectionTested && (
-          <Button
-            type="primary"
-            onClick={() => testConnection()}
-            loading={isTestingConnection}
-            disabled={!isAllFieldsFilled}
-            className="mr-5"
-          >
-            Test connection
-          </Button>
+        {isConnectionFailed && !IS_CLOUD && (
+          <div className="mt-3 text-sm text-gray-500 dark:text-gray-400">
+            If your database uses IP whitelist, make sure Databasus server IP is added to the
+            allowed list.
+          </div>
         )}
+      </>
+    );
+  };
 
-        {isConnectionTested && (
-          <Button
-            type="primary"
-            onClick={() => saveDatabase()}
-            loading={isSaving}
-            disabled={!isAllFieldsFilled}
-            className="mr-5"
-          >
-            {saveButtonText || 'Save'}
-          </Button>
-        )}
-      </div>
-
-      {isConnectionFailed && !IS_CLOUD && (
-        <div className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-          If your database uses IP whitelist, make sure Databasus server IP is added to the allowed
-          list.
+  const renderWalForm = () => {
+    return (
+      <>
+        <div className="mb-3 flex">
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            Agent mode uses physical and WAL-based incremental backups. Best suited for DBs without
+            public access, for large databases (100 GB+) or when PITR is required
+            <br />
+            <br />
+            Configuration is more complicated than remote backup and requires installing a Databasus
+            agent near DB
+          </div>
         </div>
-      )}
+
+        {renderFooter(
+          <Button type="primary" onClick={() => saveDatabase()} loading={isSaving} className="mr-5">
+            {saveButtonText || 'Save'}
+          </Button>,
+        )}
+      </>
+    );
+  };
+
+  const renderFormContent = () => {
+    switch (backupType) {
+      case PostgresBackupType.WAL_V1:
+        return renderWalForm();
+      default:
+        return renderPgDumpForm();
+    }
+  };
+
+  return (
+    <div>
+      {renderBackupTypeSelector()}
+      {renderFormContent()}
     </div>
   );
 };

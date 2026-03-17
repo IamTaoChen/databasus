@@ -183,6 +183,29 @@ jobs:
           docker compose down -v --rmi local || true
           rm -rf artifacts || true
 
+  e2e-agent-backup-restore:
+    runs-on: ubuntu-latest
+    needs: [lint-agent]
+    strategy:
+      matrix:
+        pg_version: [15, 16, 17, 18]
+      fail-fast: false
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Run backup-restore e2e (PG ${{ matrix.pg_version }})
+        run: |
+          cd agent
+          make e2e-backup-restore PG_VERSION=${{ matrix.pg_version }}
+
+      - name: Cleanup
+        if: always()
+        run: |
+          cd agent/e2e
+          docker compose -f docker-compose.backup-restore.yml down -v --rmi local || true
+          rm -rf artifacts || true
+
   # Self-hosted: performant high-frequency CPU is used to start many containers and run tests fast. Tests
   # step is bottle-neck, because we need a lot of containers and cannot parallelize tests due to shared resources
   test-backend:
@@ -518,7 +541,7 @@ jobs:
     runs-on: self-hosted
     container:
       image: node:20
-    needs: [test-backend, test-frontend, test-agent, e2e-agent]
+    needs: [test-backend, test-frontend, test-agent, e2e-agent, e2e-agent-backup-restore]
     if: ${{ github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip-release]') }}
     outputs:
       should_release: ${{ steps.version_bump.outputs.should_release }}
@@ -611,7 +634,7 @@ jobs:
 
   build-only:
     runs-on: self-hosted
-    needs: [test-backend, test-frontend, test-agent, e2e-agent]
+    needs: [test-backend, test-frontend, test-agent, e2e-agent, e2e-agent-backup-restore]
     if: ${{ github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[skip-release]') }}
     steps:
       - name: Clean workspace

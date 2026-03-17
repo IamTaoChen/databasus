@@ -23,4 +23,6 @@ export interface Database {
   lastBackupErrorMessage?: string;
 
   healthStatus?: HealthStatus;
+
+  isAgentTokenGenerated: boolean;
 }
