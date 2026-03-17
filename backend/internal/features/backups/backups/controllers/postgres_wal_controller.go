@@ -222,6 +222,14 @@ func (c *PostgreWalBackupController) CompleteFullBackupUpload(ctx *gin.Context) 
 		return
 	}
 
+	if request.Error == nil && (request.StartSegment == "" || request.StopSegment == "") {
+		ctx.JSON(
+			http.StatusBadRequest,
+			gin.H{"error": "startSegment and stopSegment are required when no error is provided"},
+		)
+		return
+	}
+
 	if err := c.walService.FinalizeBasebackup(
 		database,
 		request.BackupID,

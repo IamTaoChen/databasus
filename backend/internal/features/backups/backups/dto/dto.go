@@ -84,7 +84,7 @@ type UploadBasebackupResponse struct {
 
 type FinalizeBasebackupRequest struct {
 	BackupID     uuid.UUID `json:"backupId"     binding:"required"`
-	StartSegment string    `json:"startSegment" binding:"required"`
-	StopSegment  string    `json:"stopSegment"  binding:"required"`
+	StartSegment string    `json:"startSegment"`
+	StopSegment  string    `json:"stopSegment"`
 	Error        *string   `json:"error"`
 }
