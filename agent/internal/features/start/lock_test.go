@@ -42,7 +42,7 @@ func Test_AcquireLock_SecondAcquireFails_WhenFirstHeld(t *testing.T) {
 	second, err := AcquireLock(log)
 	assert.Nil(t, second)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Another instance is already running")
+	assert.Contains(t, err.Error(), "another instance is already running")
 	assert.Contains(t, err.Error(), fmt.Sprintf("PID %d", os.Getpid()))
 }
 
