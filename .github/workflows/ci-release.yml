@@ -537,7 +537,7 @@ jobs:
 
           echo "Cleanup complete"
 
-  build-dev:
+  build-and-push-dev:
     runs-on: self-hosted
     needs: [test-backend, test-frontend, test-agent, e2e-agent, e2e-agent-backup-restore]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
@@ -668,43 +668,6 @@ jobs:
             echo "should_release=false" >> $GITHUB_OUTPUT
             echo "No version bump needed"
           fi
-
-  build-only:
-    runs-on: self-hosted
-    needs: [test-backend, test-frontend, test-agent, e2e-agent, e2e-agent-backup-restore]
-    if: ${{ github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[skip-release]') }}
-    steps:
-      - name: Clean workspace
-        run: |
-          sudo rm -rf "$GITHUB_WORKSPACE"/* || true
-          sudo rm -rf "$GITHUB_WORKSPACE"/.* || true
-
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU (enables multi-arch emulation)
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push SHA-only tags
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          build-args: |
-            APP_VERSION=dev-${{ github.sha }}
-          tags: |
-            databasus/databasus:latest
-            databasus/databasus:${{ github.sha }}
 
   build-and-push:
     runs-on: self-hosted

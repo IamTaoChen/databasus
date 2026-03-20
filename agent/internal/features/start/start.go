@@ -205,6 +205,15 @@ func verifyPgBasebackupDocker(cfg *config.Config, log *slog.Logger) error {
 }
 
 func verifyDatabase(cfg *config.Config, log *slog.Logger) error {
+	switch cfg.PgType {
+	case "docker":
+		return verifyDatabaseDocker(cfg, log)
+	default:
+		return verifyDatabaseHost(cfg, log)
+	}
+}
+
+func verifyDatabaseHost(cfg *config.Config, log *slog.Logger) error {
 	connStr := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=postgres sslmode=disable",
 		cfg.PgHost, cfg.PgPort, cfg.PgUser, cfg.PgPassword,
@@ -248,6 +257,51 @@ func verifyDatabase(cfg *config.Config, log *slog.Logger) error {
 	log.Info("PostgreSQL connection verified",
 		"host", cfg.PgHost,
 		"port", cfg.PgPort,
+		"user", cfg.PgUser,
+		"version", majorVersion,
+	)
+
+	return nil
+}
+
+func verifyDatabaseDocker(cfg *config.Config, log *slog.Logger) error {
+	ctx, cancel := context.WithTimeout(context.Background(), dbVerifyTimeout)
+	defer cancel()
+
+	query := "SELECT current_setting('server_version_num')"
+
+	cmd := exec.CommandContext(ctx,
+		"docker", "exec",
+		"-e", "PGPASSWORD="+cfg.PgPassword,
+		cfg.PgDockerContainerName,
+		"psql", "-h", "localhost", "-p", "5432", "-U", cfg.PgUser,
+		"-d", "postgres", "-t", "-A", "-c", query,
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf(
+			"failed to connect to PostgreSQL in container '%s' as user '%s': %w (output: %s)",
+			cfg.PgDockerContainerName, cfg.PgUser, err, strings.TrimSpace(string(output)),
+		)
+	}
+
+	versionNumStr := strings.TrimSpace(string(output))
+
+	majorVersion, err := parsePgVersionNum(versionNumStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse PostgreSQL version '%s': %w", versionNumStr, err)
+	}
+
+	if majorVersion < minPgMajorVersion {
+		return fmt.Errorf(
+			"PostgreSQL %d is not supported, minimum required version is %d",
+			majorVersion, minPgMajorVersion,
+		)
+	}
+
+	log.Info("PostgreSQL connection verified (docker)",
+		"container", cfg.PgDockerContainerName,
 		"user", cfg.PgUser,
 		"version", majorVersion,
 	)
