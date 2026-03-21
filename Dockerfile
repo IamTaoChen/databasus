@@ -257,6 +257,9 @@ COPY backend/migrations ./migrations
 # Copy UI files
 COPY --from=backend-build /app/ui/build ./ui/build
 
+# Copy cloud static HTML template (injected into index.html at startup when IS_CLOUD=true)
+COPY frontend/cloud-root-content.html /app/cloud-root-content.html
+
 # Copy agent binaries (both architectures) — served by the backend
 # at GET /api/v1/system/agent?arch=amd64|arm64
 COPY --from=agent-build /agent-binaries ./agent-binaries
@@ -323,6 +326,23 @@ if [ -n "\${ANALYTICS_SCRIPT:-}" ]; then
     echo "Injecting analytics script..."
     sed -i "s#</head>#  \${ANALYTICS_SCRIPT}\\
   </head>#" /app/ui/build/index.html
+  fi
+fi
+
+# Inject static HTML into root div for cloud mode (payment system requires visible legal links)
+if [ "\${IS_CLOUD:-false}" = "true" ]; then
+  if ! grep -q "cloud-static-content" /app/ui/build/index.html 2>/dev/null; then
+    echo "Injecting cloud static HTML content..."
+    perl -i -pe '
+      BEGIN {
+        open my \$fh, "<", "/app/cloud-root-content.html" or die;
+        local \$/;
+        \$c = <\$fh>;
+        close \$fh;
+        \$c =~ s/\\n/ /g;
+      }
+      s/<div id="root"><\\/div>/<div id="root"><!-- cloud-static-content -->\$c<\\/div>/
+    ' /app/ui/build/index.html
   fi
 fi
 
@@ -439,7 +459,7 @@ fi
 echo "Setting up database and user..."
 gosu postgres \$PG_BIN/psql -p 5437 -h localhost -d postgres << 'SQL'
 
-# We use stub password, because internal DB is not exposed outside container
+-- We use stub password, because internal DB is not exposed outside container
 ALTER USER postgres WITH PASSWORD 'Q1234567';
 SELECT 'CREATE DATABASE databasus OWNER postgres'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'databasus')

@@ -166,6 +166,8 @@ export function SignInComponent({
           </button>
         )}
       </div>
+
+      <div className="mb-10" />
     </div>
   );
 }

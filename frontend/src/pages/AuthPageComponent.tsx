@@ -2,6 +2,7 @@ import { LoadingOutlined } from '@ant-design/icons';
 import { Spin } from 'antd';
 import { useEffect, useState } from 'react';
 
+import { IS_CLOUD } from '../constants';
 import { userApi } from '../entity/users';
 import { PlaygroundWarningComponent } from '../features/playground';
 import {
@@ -42,7 +43,7 @@ export function AuthPageComponent() {
   }, []);
 
   return (
-    <div className="h-full dark:bg-gray-900" style={{ height: screenHeight }}>
+    <div className="flex min-h-full flex-col dark:bg-gray-900" style={{ minHeight: screenHeight }}>
       {isLoading ? (
         <div className="flex h-screen w-screen items-center justify-center">
           <Spin indicator={<LoadingOutlined spin />} size="large" />
@@ -82,6 +83,32 @@ export function AuthPageComponent() {
             </div>
           </div>
         </div>
+      )}
+
+      {IS_CLOUD && (
+        <footer className="mx-10 mt-auto pb-5 text-center text-sm text-gray-500 dark:text-gray-500">
+          <a
+            href="https://databasus.com/terms-of-use-cloud"
+            target="_blank"
+            rel="noreferrer"
+            className="underline"
+            style={{ color: 'inherit' }}
+          >
+            Terms of Use
+          </a>
+          {' | '}
+          <a
+            href="https://databasus.com/privacy-cloud"
+            target="_blank"
+            rel="noreferrer"
+            className="underline"
+            style={{ color: 'inherit' }}
+          >
+            Privacy Policy
+          </a>
+          {' | '}
+          info@databasus.com | &copy; 2026 Databasus. All rights reserved.
+        </footer>
       )}
 
       <PlaygroundWarningComponent />
