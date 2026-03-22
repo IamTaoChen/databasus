@@ -99,8 +99,8 @@ It is also important for Databasus that you are able to decrypt and restore back
 ### 📦 **Backup types**
 
 - **Logical** — Native dump of the database in its engine-specific binary format. Compressed and streamed directly to storage with no intermediate files
-- **Physical** — File-level copy of the entire database cluster. Faster backup and restore for large datasets compared to logical dumps (requires agent)
-- **Incremental** — Physical base backup combined with continuous WAL segment archiving. Enables Point-in-Time Recovery (PITR) — restore to any second between backups. Designed for disaster recovery and near-zero data loss requirements (requires agent)
+- **Physical** — File-level copy of the entire database cluster. Faster backup and restore for large datasets compared to logical dumps
+- **Incremental** — Physical base backup combined with continuous WAL segment archiving. Enables Point-in-time recovery (PITR) — restore to any second between backups. Designed for disaster recovery and near-zero data loss requirements
 
 ### 🐳 **Self-hosted & secure**
 
