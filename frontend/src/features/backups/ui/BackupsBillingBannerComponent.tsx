@@ -48,16 +48,16 @@ export const BackupsBillingBannerComponent = ({
         className={`mt-3 rounded-lg px-4 py-3 text-sm ${
           subscription.status === SubscriptionStatus.Canceled ||
           subscription.status === SubscriptionStatus.Expired
-            ? 'border border-red-600/30 bg-red-900/20'
-            : 'border border-yellow-600/30 bg-yellow-900/20'
-        }`}
+            ? 'border border-red-300/50 bg-red-50 dark:border-red-600/30 dark:bg-red-900/20'
+            : 'border border-yellow-300/50 bg-yellow-50 dark:border-yellow-600/30 dark:bg-yellow-900/20'
+        } max-w-[500px]`}
       >
         <p
           className={
             subscription.status === SubscriptionStatus.Canceled ||
             subscription.status === SubscriptionStatus.Expired
-              ? 'text-red-400'
-              : 'text-yellow-400'
+              ? 'text-red-700 dark:text-red-400'
+              : 'text-yellow-700 dark:text-yellow-400'
           }
         >
           {subscription.status === SubscriptionStatus.Trial && (

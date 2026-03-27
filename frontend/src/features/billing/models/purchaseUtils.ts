@@ -59,7 +59,7 @@ function formatSize(gb: number): string {
 function sliderBackground(pos: number, max: number): React.CSSProperties {
   const pct = (pos / max) * 100;
   return {
-    background: `linear-gradient(to right, #155dfc ${pct}%, #1f2937 ${pct}%)`,
+    background: `linear-gradient(to right, #155dfc ${pct}%, var(--slider-track) ${pct}%)`,
   };
 }
 

@@ -60,7 +60,7 @@ export function StorageSlidersSection({
           <span className="font-bold text-blue-500">{formatSize(singleBackupSizeGb)}</span>
         </div>
 
-        <p className="mb-2 flex items-center text-gray-400">
+        <p className="mb-2 flex items-center text-gray-500 dark:text-gray-400">
           <span className="flex min-w-[185px] items-center gap-1">
             Then approximate DB size{' '}
             <span className="group relative inline-block">
@@ -78,13 +78,15 @@ export function StorageSlidersSection({
                 <circle cx="12" cy="12" r="10" />
                 <path d="M12 16v-4M12 8h.01" />
               </svg>
-              <span className="pointer-events-none absolute bottom-full left-1/2 mb-2 w-52 -translate-x-1/2 rounded-lg border border-[#ffffff20] bg-[#1f2937] px-3 py-2 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100">
+              <span className="pointer-events-none absolute bottom-full left-1/2 mb-2 w-52 -translate-x-1/2 rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-gray-600 opacity-0 transition-opacity group-hover:opacity-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
                 Estimated with ~10x compression ratio typical for database backups. Can differ based
                 on the database type, structure, and content.
               </span>
             </span>
           </span>
-          <span className="font-medium text-gray-200">~{formatSize(approximateDbSize)}</span>
+          <span className="font-medium text-gray-900 dark:text-gray-200">
+            ~{formatSize(approximateDbSize)}
+          </span>
         </p>
 
         <DbSizeCommands commands={DB_SIZE_COMMANDS} />

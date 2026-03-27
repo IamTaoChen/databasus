@@ -30,15 +30,17 @@ export function PriceActionBar({
   onChangeStorage,
 }: Props) {
   return (
-    <div className="mt-4 flex items-center gap-4 border-t border-[#ffffff20] pt-4">
+    <div className="mt-4 flex items-center gap-4 border-t border-gray-200 pt-4 dark:border-gray-700">
       <div className="flex-1">
         <p className="text-2xl font-bold">
           ${(monthlyPrice / 100).toFixed(2)}
-          <span className="text-base font-medium text-gray-400">/mo</span>
+          <span className="text-base font-medium text-gray-500 dark:text-gray-400">/mo</span>
         </p>
 
         {isChangeFlow && !isSameStorage && (
-          <p className="text-xs text-gray-400">Currently ${(currentPrice / 100).toFixed(2)}/mo</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Currently ${(currentPrice / 100).toFixed(2)}/mo
+          </p>
         )}
       </div>
 

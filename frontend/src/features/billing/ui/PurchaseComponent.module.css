@@ -6,6 +6,11 @@
   border-radius: 3px;
   outline: none;
   cursor: pointer;
+  --slider-track: #e5e7eb;
+}
+
+:global(.dark) .calcSlider {
+  --slider-track: #1f2937;
 }
 
 .calcSlider::-webkit-slider-thumb {
@@ -38,7 +43,7 @@
 .calcSlider::-moz-range-track {
   height: 6px;
   border-radius: 3px;
-  background: #1f2937;
+  background: var(--slider-track);
 }
 
 .calcSlider::-moz-range-progress {

@@ -99,7 +99,7 @@ export function PurchaseComponent({ databaseId, onSubscriptionChanged, onClose }
       {flow.isWaitingForPayment && (
         <div className="flex flex-col items-center gap-4 py-10">
           <Spin size="large" />
-          <p className="text-gray-400">Confirming your payment...</p>
+          <p className="text-gray-500 dark:text-gray-400">Confirming your payment...</p>
         </div>
       )}
 
@@ -142,14 +142,16 @@ export function PurchaseComponent({ databaseId, onSubscriptionChanged, onClose }
       {flow.isWaitingForUpgrade && !flow.isUpgradeTimedOut && (
         <div className="flex flex-col items-center gap-4 py-10">
           <Spin size="large" />
-          <p className="text-gray-400">Waiting for storage upgrade confirmation...</p>
+          <p className="text-gray-500 dark:text-gray-400">
+            Waiting for storage upgrade confirmation...
+          </p>
         </div>
       )}
 
       {isShowingForm && (
         <div>
           {isChangeFlow && subscription.pendingStorageGb !== undefined && (
-            <div className="mb-4 rounded-lg border border-yellow-600/30 bg-yellow-900/20 px-4 py-3 text-sm text-yellow-400">
+            <div className="mb-4 rounded-lg border border-yellow-300/50 bg-yellow-50 px-4 py-3 text-sm text-yellow-700 dark:border-yellow-600/30 dark:bg-yellow-900/20 dark:text-yellow-400">
               Pending storage change to {formatSize(subscription.pendingStorageGb)} from next
               billing cycle
             </div>
