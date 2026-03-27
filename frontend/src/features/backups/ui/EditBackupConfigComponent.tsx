@@ -244,6 +244,10 @@ export const EditBackupConfigComponent = ({
 
   const retentionPolicyType = backupConfig.retentionPolicyType ?? RetentionPolicyType.TimePeriod;
 
+  const isShowGfsHours =
+    backupInterval?.interval === IntervalType.HOURLY ||
+    backupInterval?.interval === IntervalType.CRON;
+
   const isRetentionValid = (() => {
     switch (retentionPolicyType) {
       case RetentionPolicyType.TimePeriod:
@@ -292,7 +296,18 @@ export const EditBackupConfigComponent = ({
             <div className="mb-1 min-w-[150px] sm:mb-0">Backup interval</div>
             <Select
               value={backupInterval?.interval}
-              onChange={(v) => saveInterval({ interval: v })}
+              onChange={(v) => {
+                saveInterval({ interval: v });
+
+                const isDailyOrMore =
+                  v === IntervalType.DAILY ||
+                  v === IntervalType.WEEKLY ||
+                  v === IntervalType.MONTHLY;
+
+                if (isDailyOrMore && retentionPolicyType === RetentionPolicyType.GFS) {
+                  updateBackupConfig({ retentionGfsHours: 24 });
+                }
+              }}
               size="small"
               className="w-full max-w-[200px] grow"
               options={[
@@ -594,18 +609,20 @@ export const EditBackupConfigComponent = ({
               </div>
 
               <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <span className="w-[110px] text-sm text-gray-600 dark:text-gray-400">
-                    Hourly backups
-                  </span>
-                  <InputNumber
-                    min={0}
-                    value={backupConfig.retentionGfsHours}
-                    onChange={(v) => updateBackupConfig({ retentionGfsHours: v ?? 0 })}
-                    size="small"
-                    className="w-[80px]"
-                  />
-                </div>
+                {isShowGfsHours && (
+                  <div className="flex items-center gap-2">
+                    <span className="w-[110px] text-sm text-gray-600 dark:text-gray-400">
+                      Hourly backups
+                    </span>
+                    <InputNumber
+                      min={0}
+                      value={backupConfig.retentionGfsHours}
+                      onChange={(v) => updateBackupConfig({ retentionGfsHours: v ?? 0 })}
+                      size="small"
+                      className="w-[80px]"
+                    />
+                  </div>
+                )}
 
                 <div className="flex items-center gap-2">
                   <span className="w-[110px] text-sm text-gray-600 dark:text-gray-400">
