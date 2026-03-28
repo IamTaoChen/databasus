@@ -302,24 +302,26 @@ export const BackupsComponent = ({
   const renderActions = (record: Backup) => {
     return (
       <div className="flex gap-2 text-lg">
-        {record.status === BackupStatus.IN_PROGRESS && isCanManageDBs && (
-          <div className="flex gap-2">
-            {cancellingBackupId === record.id ? (
-              <SyncOutlined spin />
-            ) : (
-              <Tooltip title="Cancel backup">
-                <CloseCircleOutlined
-                  className="cursor-pointer"
-                  onClick={() => {
-                    if (cancellingBackupId) return;
-                    cancelBackup(record.id);
-                  }}
-                  style={{ color: '#ff0000', opacity: cancellingBackupId ? 0.2 : 1 }}
-                />
-              </Tooltip>
-            )}
-          </div>
-        )}
+        {record.status === BackupStatus.IN_PROGRESS &&
+          isCanManageDBs &&
+          database.postgresql?.backupType !== PostgresBackupType.WAL_V1 && (
+            <div className="flex gap-2">
+              {cancellingBackupId === record.id ? (
+                <SyncOutlined spin />
+              ) : (
+                <Tooltip title="Cancel backup">
+                  <CloseCircleOutlined
+                    className="cursor-pointer"
+                    onClick={() => {
+                      if (cancellingBackupId) return;
+                      cancelBackup(record.id);
+                    }}
+                    style={{ color: '#ff0000', opacity: cancellingBackupId ? 0.2 : 1 }}
+                  />
+                </Tooltip>
+              )}
+            </div>
+          )}
 
         {record.status === BackupStatus.COMPLETED && (
           <div className="flex gap-2">
