@@ -3,7 +3,6 @@ package task_cancellation
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 
 	"github.com/google/uuid"
 
@@ -22,21 +21,6 @@ func GetTaskCancelManager() *TaskCancelManager {
 	return taskCancelManager
 }
 
-var (
-	setupOnce sync.Once
-	isSetup   atomic.Bool
-)
-
-func SetupDependencies() {
-	wasAlreadySetup := isSetup.Load()
-
-	setupOnce.Do(func() {
-		taskCancelManager.StartSubscription()
-
-		isSetup.Store(true)
-	})
-
-	if wasAlreadySetup {
-		logger.GetLogger().Warn("SetupDependencies called multiple times, ignoring subsequent call")
-	}
-}
+var SetupDependencies = sync.OnceFunc(func() {
+	taskCancelManager.StartSubscription()
+})

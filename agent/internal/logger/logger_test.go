@@ -67,7 +67,7 @@ func Test_Write_MultipleSmallWrites_CurrentSizeAccumulated(t *testing.T) {
 	rw, _, _ := setupRotatingWriter(t, 1024)
 
 	var totalWritten int64
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		data := []byte("line\n")
 		n, err := rw.Write(data)
 		require.NoError(t, err)

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -35,57 +34,50 @@ type BillingService struct {
 	workspaceService *workspaces_services.WorkspaceService
 	databaseService  databases.DatabaseService
 
-	runOnce sync.Once
-	hasRun  atomic.Bool
+	hasRun atomic.Bool
 }
 
 func (s *BillingService) Run(ctx context.Context, logger slog.Logger) {
-	wasAlreadyRun := s.hasRun.Load()
+	if s.hasRun.Swap(true) {
+		panic(fmt.Sprintf("%T.Run() called multiple times", s))
+	}
 
-	s.runOnce.Do(func() {
-		s.hasRun.Store(true)
+	ticker := time.NewTicker(billingTickerInterval)
+	defer ticker.Stop()
 
-		ticker := time.NewTicker(billingTickerInterval)
-		defer ticker.Stop()
+	// Run immediately on start
+	expiredSubsLog := logger.With("task_name", "process_expired_subscriptions")
+	if err := s.processExpiredSubscriptions(expiredSubsLog); err != nil {
+		expiredSubsLog.Error("failed to process expired subscriptions", "error", err)
+	}
 
-		// Run immediately on start
-		expiredSubsLog := logger.With("task_name", "process_expired_subscriptions")
-		if err := s.processExpiredSubscriptions(expiredSubsLog); err != nil {
-			expiredSubsLog.Error("failed to process expired subscriptions", "error", err)
-		}
+	expiredTrialsLog := logger.With("task_name", "process_expired_trials")
+	if err := s.processExpiredTrials(expiredTrialsLog); err != nil {
+		expiredTrialsLog.Error("failed to process expired trials", "error", err)
+	}
 
-		expiredTrialsLog := logger.With("task_name", "process_expired_trials")
-		if err := s.processExpiredTrials(expiredTrialsLog); err != nil {
-			expiredTrialsLog.Error("failed to process expired trials", "error", err)
-		}
+	reconcileSubsLog := logger.With("task_name", "reconcile_subscriptions")
+	if err := s.reconcileSubscriptions(reconcileSubsLog); err != nil {
+		reconcileSubsLog.Error("failed to reconcile subscriptions", "error", err)
+	}
 
-		reconcileSubsLog := logger.With("task_name", "reconcile_subscriptions")
-		if err := s.reconcileSubscriptions(reconcileSubsLog); err != nil {
-			reconcileSubsLog.Error("failed to reconcile subscriptions", "error", err)
-		}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := s.processExpiredSubscriptions(expiredSubsLog); err != nil {
+				expiredSubsLog.Error("failed to process expired subscriptions", "error", err)
+			}
 
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := s.processExpiredSubscriptions(expiredSubsLog); err != nil {
-					expiredSubsLog.Error("failed to process expired subscriptions", "error", err)
-				}
+			if err := s.processExpiredTrials(expiredTrialsLog); err != nil {
+				expiredTrialsLog.Error("failed to process expired trials", "error", err)
+			}
 
-				if err := s.processExpiredTrials(expiredTrialsLog); err != nil {
-					expiredTrialsLog.Error("failed to process expired trials", "error", err)
-				}
-
-				if err := s.reconcileSubscriptions(reconcileSubsLog); err != nil {
-					reconcileSubsLog.Error("failed to reconcile subscriptions", "error", err)
-				}
+			if err := s.reconcileSubscriptions(reconcileSubsLog); err != nil {
+				reconcileSubsLog.Error("failed to reconcile subscriptions", "error", err)
 			}
 		}
-	})
-
-	if wasAlreadyRun {
-		panic(fmt.Sprintf("%T.Run() called multiple times", s))
 	}
 }
 

@@ -2,7 +2,6 @@ package notifiers
 
 import (
 	"sync"
-	"sync/atomic"
 
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
@@ -39,21 +38,6 @@ func GetNotifierRepository() *NotifierRepository {
 	return notifierRepository
 }
 
-var (
-	setupOnce sync.Once
-	isSetup   atomic.Bool
-)
-
-func SetupDependencies() {
-	wasAlreadySetup := isSetup.Load()
-
-	setupOnce.Do(func() {
-		workspaces_services.GetWorkspaceService().AddWorkspaceDeletionListener(notifierService)
-
-		isSetup.Store(true)
-	})
-
-	if wasAlreadySetup {
-		logger.GetLogger().Warn("SetupDependencies called multiple times, ignoring subsequent call")
-	}
-}
+var SetupDependencies = sync.OnceFunc(func() {
+	workspaces_services.GetWorkspaceService().AddWorkspaceDeletionListener(notifierService)
+})

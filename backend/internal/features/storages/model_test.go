@@ -49,7 +49,7 @@ type AzuriteContainer struct {
 }
 
 func Test_Storage_BasicOperations(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	validateEnvVariables(t)
 
@@ -227,7 +227,7 @@ acl = private`, s3Container.accessKey, s3Container.secretKey, s3Container.endpoi
 				fileID := uuid.New()
 
 				err = tc.storage.SaveFile(
-					context.Background(),
+					t.Context(),
 					encryptor,
 					logger.GetLogger(),
 					fileID.String(),
@@ -250,7 +250,7 @@ acl = private`, s3Container.accessKey, s3Container.secretKey, s3Container.endpoi
 
 				fileID := uuid.New()
 				err = tc.storage.SaveFile(
-					context.Background(),
+					t.Context(),
 					encryptor,
 					logger.GetLogger(),
 					fileID.String(),

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -37,67 +36,60 @@ type BackupsScheduler struct {
 	backupToNodeRelations map[uuid.UUID]BackupToNodeRelation
 	backuperNode          *BackuperNode
 
-	runOnce sync.Once
-	hasRun  atomic.Bool
+	hasRun atomic.Bool
 }
 
 func (s *BackupsScheduler) Run(ctx context.Context) {
-	wasAlreadyRun := s.hasRun.Load()
-
-	s.runOnce.Do(func() {
-		s.hasRun.Store(true)
-
-		s.lastBackupTime = time.Now().UTC()
-
-		if config.GetEnv().IsManyNodesMode {
-			// wait other nodes to start
-			time.Sleep(schedulerStartupDelay)
-		}
-
-		if err := s.failBackupsInProgress(); err != nil {
-			s.logger.Error("Failed to fail backups in progress", "error", err)
-			panic(err)
-		}
-
-		err := s.backupNodesRegistry.SubscribeForBackupsCompletions(s.onBackupCompleted)
-		if err != nil {
-			s.logger.Error("Failed to subscribe to backup completions", "error", err)
-			panic(err)
-		}
-
-		defer func() {
-			if err := s.backupNodesRegistry.UnsubscribeForBackupsCompletions(); err != nil {
-				s.logger.Error("Failed to unsubscribe from backup completions", "error", err)
-			}
-		}()
-
-		if ctx.Err() != nil {
-			return
-		}
-
-		ticker := time.NewTicker(schedulerTickerInterval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := s.checkDeadNodesAndFailBackups(); err != nil {
-					s.logger.Error("Failed to check dead nodes and fail backups", "error", err)
-				}
-
-				if err := s.runPendingBackups(); err != nil {
-					s.logger.Error("Failed to run pending backups", "error", err)
-				}
-
-				s.lastBackupTime = time.Now().UTC()
-			}
-		}
-	})
-
-	if wasAlreadyRun {
+	if s.hasRun.Swap(true) {
 		panic(fmt.Sprintf("%T.Run() called multiple times", s))
+	}
+
+	s.lastBackupTime = time.Now().UTC()
+
+	if config.GetEnv().IsManyNodesMode {
+		// wait other nodes to start
+		time.Sleep(schedulerStartupDelay)
+	}
+
+	if err := s.failBackupsInProgress(); err != nil {
+		s.logger.Error("Failed to fail backups in progress", "error", err)
+		panic(err)
+	}
+
+	err := s.backupNodesRegistry.SubscribeForBackupsCompletions(s.onBackupCompleted)
+	if err != nil {
+		s.logger.Error("Failed to subscribe to backup completions", "error", err)
+		panic(err)
+	}
+
+	defer func() {
+		if err := s.backupNodesRegistry.UnsubscribeForBackupsCompletions(); err != nil {
+			s.logger.Error("Failed to unsubscribe from backup completions", "error", err)
+		}
+	}()
+
+	if ctx.Err() != nil {
+		return
+	}
+
+	ticker := time.NewTicker(schedulerTickerInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := s.checkDeadNodesAndFailBackups(); err != nil {
+				s.logger.Error("Failed to check dead nodes and fail backups", "error", err)
+			}
+
+			if err := s.runPendingBackups(); err != nil {
+				s.logger.Error("Failed to run pending backups", "error", err)
+			}
+
+			s.lastBackupTime = time.Now().UTC()
+		}
 	}
 }
 

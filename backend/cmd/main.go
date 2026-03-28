@@ -193,7 +193,7 @@ func startServerWithGracefulShutdown(log *slog.Logger, app *gin.Engine) {
 	log.Info("Shutdown signal received")
 
 	// Gracefully shutdown VictoriaLogs writer
-	logger.ShutdownVictoriaLogs(5 * time.Second)
+	logger.ShutdownVictoriaLogs()
 
 	// The context is used to inform the server it has 10 seconds to finish
 	// the request it is currently handling

@@ -102,7 +102,7 @@ func Test_CleanOldAuditLogs_DeletesMultipleOldLogs(t *testing.T) {
 
 	// Create many old logs with specific UUIDs to track them
 	testLogIDs := make([]uuid.UUID, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		testLogIDs[i] = uuid.New()
 		daysAgo := 400 + (i * 10)
 		log := &AuditLog{

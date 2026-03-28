@@ -110,8 +110,7 @@ func (c *Config) applyDefaults() {
 	}
 
 	if c.IsDeleteWalAfterUpload == nil {
-		v := true
-		c.IsDeleteWalAfterUpload = &v
+		c.IsDeleteWalAfterUpload = new(true)
 	}
 }
 

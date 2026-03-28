@@ -10,35 +10,33 @@ import (
 	"databasus-backend/internal/config"
 )
 
-var (
-	once         sync.Once
-	valkeyClient valkey.Client
-)
+var valkeyClient valkey.Client
+
+var initCache = sync.OnceFunc(func() {
+	env := config.GetEnv()
+
+	options := valkey.ClientOption{
+		InitAddress: []string{env.ValkeyHost + ":" + env.ValkeyPort},
+		Password:    env.ValkeyPassword,
+		Username:    env.ValkeyUsername,
+	}
+
+	if env.ValkeyIsSsl {
+		options.TLSConfig = &tls.Config{
+			ServerName: env.ValkeyHost,
+		}
+	}
+
+	client, err := valkey.NewClient(options)
+	if err != nil {
+		panic(err)
+	}
+
+	valkeyClient = client
+})
 
 func getCache() valkey.Client {
-	once.Do(func() {
-		env := config.GetEnv()
-
-		options := valkey.ClientOption{
-			InitAddress: []string{env.ValkeyHost + ":" + env.ValkeyPort},
-			Password:    env.ValkeyPassword,
-			Username:    env.ValkeyUsername,
-		}
-
-		if env.ValkeyIsSsl {
-			options.TLSConfig = &tls.Config{
-				ServerName: env.ValkeyHost,
-			}
-		}
-
-		client, err := valkey.NewClient(options)
-		if err != nil {
-			panic(err)
-		}
-
-		valkeyClient = client
-	})
-
+	initCache()
 	return valkeyClient
 }
 

@@ -42,9 +42,9 @@ func Test_TestConnection_InsufficientPermissions_ReturnsError(t *testing.T) {
 			t.Parallel()
 
 			container := connectToMongodbContainer(t, tc.port, tc.version)
-			defer container.Client.Disconnect(context.Background())
+			defer container.Client.Disconnect(t.Context())
 
-			ctx := context.Background()
+			ctx := t.Context()
 			db := container.Client.Database(container.Database)
 
 			_ = db.Collection("permission_test").Drop(ctx)
@@ -108,9 +108,9 @@ func Test_TestConnection_SufficientPermissions_Success(t *testing.T) {
 			t.Parallel()
 
 			container := connectToMongodbContainer(t, tc.port, tc.version)
-			defer container.Client.Disconnect(context.Background())
+			defer container.Client.Disconnect(t.Context())
 
-			ctx := context.Background()
+			ctx := t.Context()
 			db := container.Client.Database(container.Database)
 
 			_ = db.Collection("backup_test").Drop(ctx)
@@ -178,11 +178,11 @@ func Test_IsUserReadOnly_AdminUser_ReturnsFalse(t *testing.T) {
 			t.Parallel()
 
 			container := connectToMongodbContainer(t, tc.port, tc.version)
-			defer container.Client.Disconnect(context.Background())
+			defer container.Client.Disconnect(t.Context())
 
 			mongodbModel := createMongodbModel(container)
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			ctx := context.Background()
+			ctx := t.Context()
 
 			isReadOnly, roles, err := mongodbModel.IsUserReadOnly(ctx, logger, nil, uuid.New())
 			assert.NoError(t, err)
@@ -195,9 +195,9 @@ func Test_IsUserReadOnly_AdminUser_ReturnsFalse(t *testing.T) {
 func Test_IsUserReadOnly_ReadOnlyUser_ReturnsTrue(t *testing.T) {
 	env := config.GetEnv()
 	container := connectToMongodbContainer(t, env.TestMongodb70Port, tools.MongodbVersion7)
-	defer container.Client.Disconnect(context.Background())
+	defer container.Client.Disconnect(t.Context())
 
-	ctx := context.Background()
+	ctx := t.Context()
 	db := container.Client.Database(container.Database)
 
 	_ = db.Collection("readonly_check_test").Drop(ctx)
@@ -251,15 +251,15 @@ func Test_CreateReadOnlyUser_UserCanReadButNotWrite(t *testing.T) {
 			t.Parallel()
 
 			container := connectToMongodbContainer(t, tc.port, tc.version)
-			defer container.Client.Disconnect(context.Background())
+			defer container.Client.Disconnect(t.Context())
 
-			ctx := context.Background()
+			ctx := t.Context()
 			db := container.Client.Database(container.Database)
 
 			_ = db.Collection("readonly_test").Drop(ctx)
 			_ = db.Collection("hack_collection").Drop(ctx)
 
-			_, err := db.Collection("readonly_test").InsertMany(ctx, []interface{}{
+			_, err := db.Collection("readonly_test").InsertMany(ctx, []any{
 				bson.M{"data": "test1"},
 				bson.M{"data": "test2"},
 			})
@@ -317,9 +317,9 @@ func Test_CreateReadOnlyUser_UserCanReadButNotWrite(t *testing.T) {
 func Test_ReadOnlyUser_FutureCollections_CanSelect(t *testing.T) {
 	env := config.GetEnv()
 	container := connectToMongodbContainer(t, env.TestMongodb70Port, tools.MongodbVersion7)
-	defer container.Client.Disconnect(context.Background())
+	defer container.Client.Disconnect(t.Context())
 
-	ctx := context.Background()
+	ctx := t.Context()
 	db := container.Client.Database(container.Database)
 
 	mongodbModel := createMongodbModel(container)
@@ -348,9 +348,9 @@ func Test_ReadOnlyUser_FutureCollections_CanSelect(t *testing.T) {
 func Test_ReadOnlyUser_CannotDropOrModifyCollections(t *testing.T) {
 	env := config.GetEnv()
 	container := connectToMongodbContainer(t, env.TestMongodb70Port, tools.MongodbVersion7)
-	defer container.Client.Disconnect(context.Background())
+	defer container.Client.Disconnect(t.Context())
 
-	ctx := context.Background()
+	ctx := t.Context()
 	db := container.Client.Database(container.Database)
 
 	_ = db.Collection("drop_test").Drop(ctx)
@@ -420,7 +420,7 @@ func connectToMongodbContainer(
 		authDatabase,
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
 	clientOptions := options.Client().ApplyURI(uri)
@@ -473,7 +473,7 @@ func connectWithCredentials(
 		container.Database, container.AuthDatabase,
 	)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	clientOptions := options.Client().ApplyURI(uri)
 	client, err := mongo.Connect(ctx, clientOptions)
 	assert.NoError(t, err)

@@ -33,7 +33,7 @@ func Test_BuildGFSKeepSet(t *testing.T) {
 	// backupsEveryDay returns n backups, newest-first, each 1 day apart.
 	backupsEveryDay := func(n int) []*backups_core.Backup {
 		bs := make([]*backups_core.Backup, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			bs[i] = newBackup(ref.Add(-time.Duration(i) * day))
 		}
 		return bs
@@ -42,7 +42,7 @@ func Test_BuildGFSKeepSet(t *testing.T) {
 	// backupsEveryWeek returns n backups, newest-first, each 7 days apart.
 	backupsEveryWeek := func(n int) []*backups_core.Backup {
 		bs := make([]*backups_core.Backup, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			bs[i] = newBackup(ref.Add(-time.Duration(i) * week))
 		}
 		return bs
@@ -53,7 +53,7 @@ func Test_BuildGFSKeepSet(t *testing.T) {
 	// backupsEveryHour returns n backups, newest-first, each 1 hour apart.
 	backupsEveryHour := func(n int) []*backups_core.Backup {
 		bs := make([]*backups_core.Backup, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			bs[i] = newBackup(ref.Add(-time.Duration(i) * hour))
 		}
 		return bs
@@ -62,7 +62,7 @@ func Test_BuildGFSKeepSet(t *testing.T) {
 	// backupsEveryMonth returns n backups, newest-first, each ~1 month apart.
 	backupsEveryMonth := func(n int) []*backups_core.Backup {
 		bs := make([]*backups_core.Backup, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			bs[i] = newBackup(ref.AddDate(0, -i, 0))
 		}
 		return bs
@@ -71,7 +71,7 @@ func Test_BuildGFSKeepSet(t *testing.T) {
 	// backupsEveryYear returns n backups, newest-first, each 1 year apart.
 	backupsEveryYear := func(n int) []*backups_core.Backup {
 		bs := make([]*backups_core.Backup, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			bs[i] = newBackup(ref.AddDate(-i, 0, 0))
 		}
 		return bs
@@ -410,7 +410,7 @@ func Test_CleanByGFS_KeepsCorrectBackupsPerSlot(t *testing.T) {
 
 	// Create 5 backups on 5 different days; only the 3 newest days should be kept
 	var backupIDs []uuid.UUID
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		backup := &backups_core.Backup{
 			ID:           uuid.New(),
 			DatabaseID:   database.ID,
@@ -486,7 +486,7 @@ func Test_CleanByGFS_WithWeeklyAndMonthlySlots_KeepsWiderSpread(t *testing.T) {
 	// Create one backup per week for 6 weeks (each on Monday of that week)
 	// GFS should keep: 2 daily (most recent 2 unique days) + 2 weekly + 1 monthly = up to 5 unique
 	var createdIDs []uuid.UUID
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		weekOffset := time.Duration(5-i) * 7 * 24 * time.Hour
 		backup := &backups_core.Backup{
 			ID:           uuid.New(),
@@ -561,7 +561,7 @@ func Test_CleanByGFS_WithHourlySlots_KeepsCorrectBackups(t *testing.T) {
 
 	// Create 5 backups spaced 1 hour apart; only the 3 newest hours should be kept
 	var backupIDs []uuid.UUID
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		backup := &backups_core.Backup{
 			ID:           uuid.New(),
 			DatabaseID:   database.ID,
@@ -824,8 +824,8 @@ func Test_CleanByGFS_WithMultipleBackupsPerDay_KeepsOnlyOnePerDailySlot(t *testi
 
 	// Create 3 backups per day for 10 days = 30 total, all beyond grace period.
 	// Each day gets backups at base+0h, base+6h, base+12h.
-	for day := 0; day < 10; day++ {
-		for sub := 0; sub < 3; sub++ {
+	for day := range 10 {
+		for sub := range 3 {
 			backup := &backups_core.Backup{
 				ID:           uuid.New(),
 				DatabaseID:   database.ID,
@@ -915,7 +915,7 @@ func Test_CleanByGFS_With24HourlySlotsAnd23DailyBackups_DeletesExcessBackups(t *
 
 	now := time.Now().UTC()
 
-	for i := 0; i < 23; i++ {
+	for i := range 23 {
 		backup := &backups_core.Backup{
 			ID:           uuid.New(),
 			DatabaseID:   database.ID,
@@ -985,7 +985,7 @@ func Test_CleanByGFS_WithDisabledHourlySlotsAnd23DailyBackups_DeletesExcessBacku
 
 	now := time.Now().UTC()
 
-	for i := 0; i < 23; i++ {
+	for i := range 23 {
 		backup := &backups_core.Backup{
 			ID:           uuid.New(),
 			DatabaseID:   database.ID,
@@ -1055,7 +1055,7 @@ func Test_CleanByGFS_WithDailySlotsAndWeeklyBackups_DeletesExcessBackups(t *test
 	// Create 10 weekly backups (1 per week, all >2h old past grace period).
 	// With 7d/4w config, correct behavior: ~8 kept (4 weekly + overlap with daily for recent ones).
 	// Daily slots should NOT absorb weekly backups that are older than 7 days.
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		backup := &backups_core.Backup{
 			ID:           uuid.New(),
 			DatabaseID:   database.ID,
@@ -1138,7 +1138,7 @@ func Test_CleanByGFS_WithWeeklySlotsAndMonthlyBackups_DeletesExcessBackups(t *te
 	// With 52w/3m config, correct behavior: 3 kept (3 monthly slots; weekly should only
 	// cover recent 52 weeks but not artificially retain old monthly backups).
 	// Bug: all 8 kept because each monthly backup fills a unique weekly slot.
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		backup := &backups_core.Backup{
 			ID:           uuid.New(),
 			DatabaseID:   database.ID,

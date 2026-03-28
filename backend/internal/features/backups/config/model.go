@@ -28,8 +28,8 @@ type BackupConfig struct {
 	RetentionGfsMonths int `json:"retentionGfsMonths" gorm:"column:retention_gfs_months;type:int;not null;default:0"`
 	RetentionGfsYears  int `json:"retentionGfsYears"  gorm:"column:retention_gfs_years;type:int;not null;default:0"`
 
-	BackupIntervalID uuid.UUID           `json:"backupIntervalId"         gorm:"column:backup_interval_id;type:uuid;not null"`
-	BackupInterval   *intervals.Interval `json:"backupInterval,omitempty" gorm:"foreignKey:BackupIntervalID"`
+	BackupIntervalID uuid.UUID           `json:"backupIntervalId"        gorm:"column:backup_interval_id;type:uuid;not null"`
+	BackupInterval   *intervals.Interval `json:"backupInterval,omitzero" gorm:"foreignKey:BackupIntervalID"`
 
 	Storage   *storages.Storage `json:"storage"   gorm:"foreignKey:StorageID"`
 	StorageID *uuid.UUID        `json:"storageId" gorm:"column:storage_id;type:uuid;"`

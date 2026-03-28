@@ -2,12 +2,10 @@ package storages
 
 import (
 	"sync"
-	"sync/atomic"
 
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
 	"databasus-backend/internal/util/encryption"
-	"databasus-backend/internal/util/logger"
 )
 
 var (
@@ -34,21 +32,6 @@ func GetStorageController() *StorageController {
 	return storageController
 }
 
-var (
-	setupOnce sync.Once
-	isSetup   atomic.Bool
-)
-
-func SetupDependencies() {
-	wasAlreadySetup := isSetup.Load()
-
-	setupOnce.Do(func() {
-		workspaces_services.GetWorkspaceService().AddWorkspaceDeletionListener(storageService)
-
-		isSetup.Store(true)
-	})
-
-	if wasAlreadySetup {
-		logger.GetLogger().Warn("SetupDependencies called multiple times, ignoring subsequent call")
-	}
-}
+var SetupDependencies = sync.OnceFunc(func() {
+	workspaces_services.GetWorkspaceService().AddWorkspaceDeletionListener(storageService)
+})

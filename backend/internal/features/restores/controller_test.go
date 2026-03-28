@@ -462,7 +462,7 @@ func Test_CancelRestore_InProgressRestore_SuccessfullyCancelled(t *testing.T) {
 		},
 	}
 
-	var restoreResponse map[string]interface{}
+	var restoreResponse map[string]any
 	test_utils.MakePostRequestAndUnmarshal(
 		t,
 		router,

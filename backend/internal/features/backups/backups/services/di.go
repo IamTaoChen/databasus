@@ -2,7 +2,6 @@ package backups_services
 
 import (
 	"sync"
-	"sync/atomic"
 
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/backups/backups/backuping"
@@ -59,26 +58,11 @@ func GetWalService() *PostgreWalBackupService {
 	return walService
 }
 
-var (
-	setupOnce sync.Once
-	isSetup   atomic.Bool
-)
+var SetupDependencies = sync.OnceFunc(func() {
+	backups_config.
+		GetBackupConfigService().
+		SetDatabaseStorageChangeListener(backupService)
 
-func SetupDependencies() {
-	wasAlreadySetup := isSetup.Load()
-
-	setupOnce.Do(func() {
-		backups_config.
-			GetBackupConfigService().
-			SetDatabaseStorageChangeListener(backupService)
-
-		databases.GetDatabaseService().AddDbRemoveListener(backupService)
-		databases.GetDatabaseService().AddDbCopyListener(backups_config.GetBackupConfigService())
-
-		isSetup.Store(true)
-	})
-
-	if wasAlreadySetup {
-		logger.GetLogger().Warn("SetupDependencies called multiple times, ignoring subsequent call")
-	}
-}
+	databases.GetDatabaseService().AddDbRemoveListener(backupService)
+	databases.GetDatabaseService().AddDbCopyListener(backups_config.GetBackupConfigService())
+})

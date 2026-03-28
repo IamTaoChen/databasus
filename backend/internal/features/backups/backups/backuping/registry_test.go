@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -322,7 +320,7 @@ func Test_GetAvailableNodes_SkipsInvalidJsonData(t *testing.T) {
 	err := registry.HearthbeatNodeInRegistry(time.Now().UTC(), node)
 	assert.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), registry.timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), registry.timeout)
 	defer cancel()
 
 	invalidKey := nodeInfoKeyPrefix + uuid.New().String() + nodeInfoKeySuffix
@@ -331,7 +329,7 @@ func Test_GetAvailableNodes_SkipsInvalidJsonData(t *testing.T) {
 		registry.client.B().Set().Key(invalidKey).Value("invalid json data").Build(),
 	)
 	defer func() {
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), registry.timeout)
+		cleanupCtx, cleanupCancel := context.WithTimeout(t.Context(), registry.timeout)
 		defer cleanupCancel()
 		registry.client.Do(cleanupCtx, registry.client.B().Del().Key(invalidKey).Build())
 	}()
@@ -401,7 +399,7 @@ func Test_GetAvailableNodes_ExcludesStaleNodesFromCache(t *testing.T) {
 	err = registry.HearthbeatNodeInRegistry(time.Now().UTC(), node3)
 	assert.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), registry.timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), registry.timeout)
 	defer cancel()
 
 	key := fmt.Sprintf("%s%s%s", nodeInfoKeyPrefix, node2.ID.String(), nodeInfoKeySuffix)
@@ -419,7 +417,7 @@ func Test_GetAvailableNodes_ExcludesStaleNodesFromCache(t *testing.T) {
 	modifiedData, err := json.Marshal(node)
 	assert.NoError(t, err)
 
-	setCtx, setCancel := context.WithTimeout(context.Background(), registry.timeout)
+	setCtx, setCancel := context.WithTimeout(t.Context(), registry.timeout)
 	defer setCancel()
 	setResult := registry.client.Do(
 		setCtx,
@@ -464,7 +462,7 @@ func Test_GetBackupNodesStats_ExcludesStaleNodesFromCache(t *testing.T) {
 	err = registry.IncrementBackupsInProgress(node3.ID)
 	assert.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), registry.timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), registry.timeout)
 	defer cancel()
 
 	key := fmt.Sprintf("%s%s%s", nodeInfoKeyPrefix, node2.ID.String(), nodeInfoKeySuffix)
@@ -482,7 +480,7 @@ func Test_GetBackupNodesStats_ExcludesStaleNodesFromCache(t *testing.T) {
 	modifiedData, err := json.Marshal(node)
 	assert.NoError(t, err)
 
-	setCtx, setCancel := context.WithTimeout(context.Background(), registry.timeout)
+	setCtx, setCancel := context.WithTimeout(t.Context(), registry.timeout)
 	defer setCancel()
 	setResult := registry.client.Do(
 		setCtx,
@@ -524,7 +522,7 @@ func Test_CleanupDeadNodes_RemovesNodeInfoAndCounter(t *testing.T) {
 	err = registry.IncrementBackupsInProgress(node2.ID)
 	assert.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), registry.timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), registry.timeout)
 	defer cancel()
 
 	key := fmt.Sprintf("%s%s%s", nodeInfoKeyPrefix, node2.ID.String(), nodeInfoKeySuffix)
@@ -542,7 +540,7 @@ func Test_CleanupDeadNodes_RemovesNodeInfoAndCounter(t *testing.T) {
 	modifiedData, err := json.Marshal(node)
 	assert.NoError(t, err)
 
-	setCtx, setCancel := context.WithTimeout(context.Background(), registry.timeout)
+	setCtx, setCancel := context.WithTimeout(t.Context(), registry.timeout)
 	defer setCancel()
 	setResult := registry.client.Do(
 		setCtx,
@@ -553,7 +551,7 @@ func Test_CleanupDeadNodes_RemovesNodeInfoAndCounter(t *testing.T) {
 	err = registry.cleanupDeadNodes()
 	assert.NoError(t, err)
 
-	checkCtx, checkCancel := context.WithTimeout(context.Background(), registry.timeout)
+	checkCtx, checkCancel := context.WithTimeout(t.Context(), registry.timeout)
 	defer checkCancel()
 
 	infoKey := fmt.Sprintf("%s%s%s", nodeInfoKeyPrefix, node2.ID.String(), nodeInfoKeySuffix)
@@ -566,7 +564,7 @@ func Test_CleanupDeadNodes_RemovesNodeInfoAndCounter(t *testing.T) {
 		node2.ID.String(),
 		nodeActiveBackupsSuffix,
 	)
-	counterCtx, counterCancel := context.WithTimeout(context.Background(), registry.timeout)
+	counterCtx, counterCancel := context.WithTimeout(t.Context(), registry.timeout)
 	defer counterCancel()
 	counterResult := registry.client.Do(
 		counterCtx,
@@ -575,7 +573,7 @@ func Test_CleanupDeadNodes_RemovesNodeInfoAndCounter(t *testing.T) {
 	assert.Error(t, counterResult.Error())
 
 	activeInfoKey := fmt.Sprintf("%s%s%s", nodeInfoKeyPrefix, node1.ID.String(), nodeInfoKeySuffix)
-	activeCtx, activeCancel := context.WithTimeout(context.Background(), registry.timeout)
+	activeCtx, activeCancel := context.WithTimeout(t.Context(), registry.timeout)
 	defer activeCancel()
 	activeResult := registry.client.Do(
 		activeCtx,
@@ -601,8 +599,6 @@ func createTestRegistry() *BackupNodesRegistry {
 		timeout:           cache_utils.DefaultCacheTimeout,
 		pubsubBackups:     cache_utils.NewPubSubManager(),
 		pubsubCompletions: cache_utils.NewPubSubManager(),
-		runOnce:           sync.Once{},
-		hasRun:            atomic.Bool{},
 	}
 }
 
@@ -732,7 +728,7 @@ func Test_SubscribeNodeForBackupsAssignment_HandlesInvalidJson(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	err = registry.pubsubBackups.Publish(ctx, "backup:submit", "invalid json")
 	assert.NoError(t, err)
 
@@ -978,7 +974,7 @@ func Test_SubscribeForBackupsCompletions_HandlesInvalidJson(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	err = registry.pubsubCompletions.Publish(ctx, "backup:completion", "invalid json")
 	assert.NoError(t, err)
 
@@ -1093,7 +1089,7 @@ func Test_MultipleSubscribers_EachReceivesCompletionMessages(t *testing.T) {
 	receivedAll2 := []uuid.UUID{}
 	receivedAll3 := []uuid.UUID{}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		select {
 		case received := <-receivedBackups1:
 			receivedAll1 = append(receivedAll1, received)
@@ -1102,7 +1098,7 @@ func Test_MultipleSubscribers_EachReceivesCompletionMessages(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		select {
 		case received := <-receivedBackups2:
 			receivedAll2 = append(receivedAll2, received)
@@ -1111,7 +1107,7 @@ func Test_MultipleSubscribers_EachReceivesCompletionMessages(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		select {
 		case received := <-receivedBackups3:
 			receivedAll3 = append(receivedAll3, received)

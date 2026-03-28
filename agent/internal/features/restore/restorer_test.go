@@ -3,7 +3,6 @@ package restore
 import (
 	"archive/tar"
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -86,7 +85,7 @@ func Test_RunRestore_WhenBasebackupAndWalSegmentsAvailable_FilesExtractedAndReco
 	targetDir := createTestTargetDir(t)
 	restorer := newTestRestorer(server.URL, targetDir, "", "", "")
 
-	err := restorer.Run(context.Background())
+	err := restorer.Run(t.Context())
 	require.NoError(t, err)
 
 	pgVersionContent, err := os.ReadFile(filepath.Join(targetDir, "PG_VERSION"))
@@ -152,7 +151,7 @@ func Test_RunRestore_WhenTargetTimeProvided_RecoveryTargetTimeWrittenToConfig(t 
 	targetDir := createTestTargetDir(t)
 	restorer := newTestRestorer(server.URL, targetDir, "", "2026-02-28T14:30:00Z", "")
 
-	err := restorer.Run(context.Background())
+	err := restorer.Run(t.Context())
 	require.NoError(t, err)
 
 	autoConfContent, err := os.ReadFile(filepath.Join(targetDir, "postgresql.auto.conf"))
@@ -169,7 +168,7 @@ func Test_RunRestore_WhenPgDataDirNotEmpty_ReturnsError(t *testing.T) {
 
 	restorer := newTestRestorer("http://localhost:0", targetDir, "", "", "")
 
-	err = restorer.Run(context.Background())
+	err = restorer.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not empty")
 }
@@ -179,7 +178,7 @@ func Test_RunRestore_WhenPgDataDirDoesNotExist_ReturnsError(t *testing.T) {
 
 	restorer := newTestRestorer("http://localhost:0", nonExistentDir, "", "", "")
 
-	err := restorer.Run(context.Background())
+	err := restorer.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not exist")
 }
@@ -197,7 +196,7 @@ func Test_RunRestore_WhenNoBackupsAvailable_ReturnsError(t *testing.T) {
 	targetDir := createTestTargetDir(t)
 	restorer := newTestRestorer(server.URL, targetDir, "", "", "")
 
-	err := restorer.Run(context.Background())
+	err := restorer.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "No full backups available")
 }
@@ -216,7 +215,7 @@ func Test_RunRestore_WhenWalChainBroken_ReturnsError(t *testing.T) {
 	targetDir := createTestTargetDir(t)
 	restorer := newTestRestorer(server.URL, targetDir, "", "", "")
 
-	err := restorer.Run(context.Background())
+	err := restorer.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "WAL chain broken")
 	assert.Contains(t, err.Error(), testWalSegment1)
@@ -282,7 +281,7 @@ func Test_DownloadWalSegment_WhenFirstAttemptFails_RetriesAndSucceeds(t *testing
 	retryDelayOverride = &testDelay
 	defer func() { retryDelayOverride = origDelay }()
 
-	err := restorer.Run(context.Background())
+	err := restorer.Run(t.Context())
 	require.NoError(t, err)
 
 	mu.Lock()
@@ -341,7 +340,7 @@ func Test_DownloadWalSegment_WhenAllAttemptsFail_ReturnsErrorWithSegmentName(t *
 	retryDelayOverride = &testDelay
 	defer func() { retryDelayOverride = origDelay }()
 
-	err := restorer.Run(context.Background())
+	err := restorer.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), testWalSegment1)
 	assert.Contains(t, err.Error(), "3 attempts")
@@ -351,7 +350,7 @@ func Test_RunRestore_WhenInvalidTargetTimeFormat_ReturnsError(t *testing.T) {
 	targetDir := createTestTargetDir(t)
 	restorer := newTestRestorer("http://localhost:0", targetDir, "", "not-a-valid-time", "")
 
-	err := restorer.Run(context.Background())
+	err := restorer.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid --target-time format")
 }
@@ -384,7 +383,7 @@ func Test_RunRestore_WhenBasebackupDownloadFails_ReturnsError(t *testing.T) {
 	targetDir := createTestTargetDir(t)
 	restorer := newTestRestorer(server.URL, targetDir, "", "", "")
 
-	err := restorer.Run(context.Background())
+	err := restorer.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "basebackup download failed")
 }
@@ -423,7 +422,7 @@ func Test_RunRestore_WhenNoWalSegmentsInPlan_BasebackupRestoredSuccessfully(t *t
 	targetDir := createTestTargetDir(t)
 	restorer := newTestRestorer(server.URL, targetDir, "", "", "")
 
-	err := restorer.Run(context.Background())
+	err := restorer.Run(t.Context())
 	require.NoError(t, err)
 
 	pgVersionContent, err := os.ReadFile(filepath.Join(targetDir, "PG_VERSION"))
@@ -486,7 +485,7 @@ func Test_RunRestore_WhenMakingApiCalls_AuthTokenIncludedInRequests(t *testing.T
 	targetDir := createTestTargetDir(t)
 	restorer := newTestRestorer(server.URL, targetDir, "", "", "")
 
-	err := restorer.Run(context.Background())
+	err := restorer.Run(t.Context())
 	require.NoError(t, err)
 
 	assert.GreaterOrEqual(t, int(receivedAuthHeaders.Load()), 2)
@@ -530,7 +529,7 @@ func Test_ConfigurePostgresRecovery_WhenPgTypeHost_UsesHostAbsolutePath(t *testi
 	targetDir := createTestTargetDir(t)
 	restorer := newTestRestorer(server.URL, targetDir, "", "", "host")
 
-	err := restorer.Run(context.Background())
+	err := restorer.Run(t.Context())
 	require.NoError(t, err)
 
 	autoConfContent, err := os.ReadFile(filepath.Join(targetDir, "postgresql.auto.conf"))
@@ -577,7 +576,7 @@ func Test_ConfigurePostgresRecovery_WhenPgTypeDocker_UsesContainerPath(t *testin
 	targetDir := createTestTargetDir(t)
 	restorer := newTestRestorer(server.URL, targetDir, "", "", "docker")
 
-	err := restorer.Run(context.Background())
+	err := restorer.Run(t.Context())
 	require.NoError(t, err)
 
 	autoConfContent, err := os.ReadFile(filepath.Join(targetDir, "postgresql.auto.conf"))

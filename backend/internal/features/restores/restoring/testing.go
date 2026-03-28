@@ -3,7 +3,6 @@ package restoring
 import (
 	"context"
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -53,7 +52,6 @@ func CreateTestRestorerNode() *RestorerNode {
 		restoreDatabaseCache,
 		tasks_cancellation.GetTaskCancelManager(),
 		time.Time{},
-		sync.Once{},
 		atomic.Bool{},
 	}
 }
@@ -73,7 +71,6 @@ func CreateTestRestorerNodeWithUsecase(usecase restores_core.RestoreBackupUsecas
 		restoreDatabaseCache,
 		tasks_cancellation.GetTaskCancelManager(),
 		time.Time{},
-		sync.Once{},
 		atomic.Bool{},
 	}
 }
@@ -91,7 +88,6 @@ func CreateTestRestoresScheduler() *RestoresScheduler {
 		restorerNode,
 		restoreDatabaseCache,
 		uuid.Nil,
-		sync.Once{},
 		atomic.Bool{},
 	}
 }

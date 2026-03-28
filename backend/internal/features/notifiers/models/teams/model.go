@@ -49,7 +49,7 @@ type cardAttachment struct {
 type payload struct {
 	Title       string           `json:"title"`
 	Text        string           `json:"text"`
-	Attachments []cardAttachment `json:"attachments,omitempty"`
+	Attachments []cardAttachment `json:"attachments,omitzero"`
 }
 
 func (n *TeamsNotifier) Send(

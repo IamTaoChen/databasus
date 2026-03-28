@@ -686,7 +686,7 @@ func Test_StartRestore_CredentialsStoredEncryptedInCache(t *testing.T) {
 		Port:     5432,
 		Username: "testuser",
 		Password: plaintextPassword,
-		Database: stringPtr("testdb"),
+		Database: new("testdb"),
 		Version:  "16",
 	}
 

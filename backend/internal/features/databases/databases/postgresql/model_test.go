@@ -1,7 +1,6 @@
 package postgresql
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -267,7 +266,7 @@ func Test_IsUserReadOnly_AdminUser_ReturnsFalse(t *testing.T) {
 
 			pgModel := createPostgresModel(container)
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			ctx := context.Background()
+			ctx := t.Context()
 
 			isReadOnly, privileges, err := pgModel.IsUserReadOnly(ctx, logger, nil, uuid.New())
 			assert.NoError(t, err)
@@ -294,7 +293,7 @@ func Test_IsUserReadOnly_ReadOnlyUser_ReturnsTrue(t *testing.T) {
 
 	pgModel := createPostgresModel(container)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	username, password, err := pgModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 	assert.NoError(t, err)
@@ -359,7 +358,7 @@ func Test_CreateReadOnlyUser_UserCanReadButNotWrite(t *testing.T) {
 
 			pgModel := createPostgresModel(container)
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			ctx := context.Background()
+			ctx := t.Context()
 
 			username, password, err := pgModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 			assert.NoError(t, err)
@@ -438,7 +437,7 @@ func Test_ReadOnlyUser_FutureTables_HaveSelectPermission(t *testing.T) {
 
 	pgModel := createPostgresModel(container)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	username, password, err := pgModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 	assert.NoError(t, err)
@@ -491,7 +490,7 @@ func Test_ReadOnlyUser_MultipleSchemas_AllAccessible(t *testing.T) {
 
 	pgModel := createPostgresModel(container)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	username, password, err := pgModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 	assert.NoError(t, err)
@@ -566,7 +565,7 @@ func Test_CreateReadOnlyUser_DatabaseNameWithDash_Success(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	username, password, err := pgModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 	assert.NoError(t, err)
@@ -653,7 +652,7 @@ func Test_CreateReadOnlyUser_Supabase_UserCanReadButNotWrite(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	connectionUsername, newPassword, err := pgModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 	assert.NoError(t, err)
@@ -743,7 +742,7 @@ func Test_CreateReadOnlyUser_WithPublicSchema_Success(t *testing.T) {
 
 			pgModel := createPostgresModel(container)
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			ctx := context.Background()
+			ctx := t.Context()
 
 			username, password, err := pgModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 			assert.NoError(t, err)
@@ -851,7 +850,7 @@ func Test_CreateReadOnlyUser_WithoutPublicSchema_Success(t *testing.T) {
 
 			pgModel := createPostgresModel(container)
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			ctx := context.Background()
+			ctx := t.Context()
 
 			username, password, err := pgModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 			assert.NoError(t, err, "CreateReadOnlyUser should succeed without public schema")
@@ -1018,7 +1017,7 @@ func Test_CreateReadOnlyUser_PublicSchemaExistsButNoPermissions_ReturnsError(t *
 			}
 
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			ctx := context.Background()
+			ctx := t.Context()
 
 			username, password, err := pgModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 			assert.Error(
@@ -1435,7 +1434,7 @@ func Test_CreateReadOnlyUser_TablesCreatedByDifferentUser_ReadOnlyUserCanRead(t 
 	// At this point, user_creator already owns objects, so ALTER DEFAULT PRIVILEGES FOR ROLE should apply
 	pgModel := createPostgresModel(container)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	readonlyUsername, readonlyPassword, err := pgModel.CreateReadOnlyUser(
 		ctx,
@@ -1602,7 +1601,7 @@ func Test_CreateReadOnlyUser_WithIncludeSchemas_OnlyGrantsAccessToSpecifiedSchem
 	pgModel.IncludeSchemas = []string{"public", "included_schema"}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	readonlyUsername, readonlyPassword, err := pgModel.CreateReadOnlyUser(
 		ctx,

@@ -14,13 +14,12 @@ import (
 
 var log = logger.GetLogger()
 
-var (
-	db     *gorm.DB
-	dbOnce sync.Once
-)
+var db *gorm.DB
+
+var initDb = sync.OnceFunc(loadDbs)
 
 func GetDb() *gorm.DB {
-	dbOnce.Do(loadDbs)
+	initDb()
 	return db
 }
 
