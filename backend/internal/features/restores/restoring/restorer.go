@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -45,80 +44,73 @@ type RestorerNode struct {
 
 	lastHeartbeat time.Time
 
-	runOnce sync.Once
-	hasRun  atomic.Bool
+	hasRun atomic.Bool
 }
 
 func (n *RestorerNode) Run(ctx context.Context) {
-	wasAlreadyRun := n.hasRun.Load()
-
-	n.runOnce.Do(func() {
-		n.hasRun.Store(true)
-
-		n.lastHeartbeat = time.Now().UTC()
-
-		throughputMBs := config.GetEnv().NodeNetworkThroughputMBs
-
-		restoreNode := RestoreNode{
-			ID:            n.nodeID,
-			ThroughputMBs: throughputMBs,
-		}
-
-		if err := n.restoreNodesRegistry.HearthbeatNodeInRegistry(time.Now().UTC(), restoreNode); err != nil {
-			n.logger.Error("Failed to register node in registry", "error", err)
-			panic(err)
-		}
-
-		restoreHandler := func(restoreID uuid.UUID, isCallNotifier bool) {
-			n.MakeRestore(restoreID)
-			if err := n.restoreNodesRegistry.PublishRestoreCompletion(n.nodeID, restoreID); err != nil {
-				n.logger.Error(
-					"Failed to publish restore completion",
-					"error",
-					err,
-					"restoreID",
-					restoreID,
-				)
-			}
-		}
-
-		err := n.restoreNodesRegistry.SubscribeNodeForRestoresAssignment(
-			n.nodeID,
-			restoreHandler,
-		)
-		if err != nil {
-			n.logger.Error("Failed to subscribe to restore assignments", "error", err)
-			panic(err)
-		}
-		defer func() {
-			if err := n.restoreNodesRegistry.UnsubscribeNodeForRestoresAssignments(); err != nil {
-				n.logger.Error("Failed to unsubscribe from restore assignments", "error", err)
-			}
-		}()
-
-		ticker := time.NewTicker(heartbeatTickerInterval)
-		defer ticker.Stop()
-
-		n.logger.Info("Restore node started", "nodeID", n.nodeID, "throughput", throughputMBs)
-
-		for {
-			select {
-			case <-ctx.Done():
-				n.logger.Info("Shutdown signal received, unregistering node", "nodeID", n.nodeID)
-
-				if err := n.restoreNodesRegistry.UnregisterNodeFromRegistry(restoreNode); err != nil {
-					n.logger.Error("Failed to unregister node from registry", "error", err)
-				}
-
-				return
-			case <-ticker.C:
-				n.sendHeartbeat(&restoreNode)
-			}
-		}
-	})
-
-	if wasAlreadyRun {
+	if n.hasRun.Swap(true) {
 		panic(fmt.Sprintf("%T.Run() called multiple times", n))
+	}
+
+	n.lastHeartbeat = time.Now().UTC()
+
+	throughputMBs := config.GetEnv().NodeNetworkThroughputMBs
+
+	restoreNode := RestoreNode{
+		ID:            n.nodeID,
+		ThroughputMBs: throughputMBs,
+	}
+
+	if err := n.restoreNodesRegistry.HearthbeatNodeInRegistry(time.Now().UTC(), restoreNode); err != nil {
+		n.logger.Error("Failed to register node in registry", "error", err)
+		panic(err)
+	}
+
+	restoreHandler := func(restoreID uuid.UUID, isCallNotifier bool) {
+		n.MakeRestore(restoreID)
+		if err := n.restoreNodesRegistry.PublishRestoreCompletion(n.nodeID, restoreID); err != nil {
+			n.logger.Error(
+				"Failed to publish restore completion",
+				"error",
+				err,
+				"restoreID",
+				restoreID,
+			)
+		}
+	}
+
+	err := n.restoreNodesRegistry.SubscribeNodeForRestoresAssignment(
+		n.nodeID,
+		restoreHandler,
+	)
+	if err != nil {
+		n.logger.Error("Failed to subscribe to restore assignments", "error", err)
+		panic(err)
+	}
+	defer func() {
+		if err := n.restoreNodesRegistry.UnsubscribeNodeForRestoresAssignments(); err != nil {
+			n.logger.Error("Failed to unsubscribe from restore assignments", "error", err)
+		}
+	}()
+
+	ticker := time.NewTicker(heartbeatTickerInterval)
+	defer ticker.Stop()
+
+	n.logger.Info("Restore node started", "nodeID", n.nodeID, "throughput", throughputMBs)
+
+	for {
+		select {
+		case <-ctx.Done():
+			n.logger.Info("Shutdown signal received, unregistering node", "nodeID", n.nodeID)
+
+			if err := n.restoreNodesRegistry.UnregisterNodeFromRegistry(restoreNode); err != nil {
+				n.logger.Error("Failed to unregister node from registry", "error", err)
+			}
+
+			return
+		case <-ticker.C:
+			n.sendHeartbeat(&restoreNode)
+		}
 	}
 }
 

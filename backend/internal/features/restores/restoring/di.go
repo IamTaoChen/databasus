@@ -1,7 +1,6 @@
 package restoring
 
 import (
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -27,8 +26,6 @@ var restoreNodesRegistry = &RestoreNodesRegistry{
 	timeout:           cache_utils.DefaultCacheTimeout,
 	pubsubRestores:    cache_utils.NewPubSubManager(),
 	pubsubCompletions: cache_utils.NewPubSubManager(),
-	runOnce:           sync.Once{},
-	hasRun:            atomic.Bool{},
 }
 
 var restoreDatabaseCache = cache_utils.NewCacheUtil[RestoreDatabaseCache](
@@ -52,7 +49,6 @@ var restorerNode = &RestorerNode{
 	restoreDatabaseCache,
 	restoreCancelManager,
 	time.Time{},
-	sync.Once{},
 	atomic.Bool{},
 }
 
@@ -68,7 +64,6 @@ var restoresScheduler = &RestoresScheduler{
 	restorerNode,
 	restoreDatabaseCache,
 	uuid.Nil,
-	sync.Once{},
 	atomic.Bool{},
 }
 

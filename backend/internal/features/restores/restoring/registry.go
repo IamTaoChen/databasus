@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -50,36 +49,30 @@ type RestoreNodesRegistry struct {
 	pubsubRestores    *cache_utils.PubSubManager
 	pubsubCompletions *cache_utils.PubSubManager
 
-	runOnce sync.Once
-	hasRun  atomic.Bool
+	hasRun atomic.Bool
 }
 
 func (r *RestoreNodesRegistry) Run(ctx context.Context) {
-	wasAlreadyRun := r.hasRun.Load()
+	if r.hasRun.Swap(true) {
+		panic(fmt.Sprintf("%T.Run() called multiple times", r))
+	}
 
-	r.runOnce.Do(func() {
-		r.hasRun.Store(true)
+	if err := r.cleanupDeadNodes(); err != nil {
+		r.logger.Error("Failed to cleanup dead nodes on startup", "error", err)
+	}
 
-		if err := r.cleanupDeadNodes(); err != nil {
-			r.logger.Error("Failed to cleanup dead nodes on startup", "error", err)
-		}
+	ticker := time.NewTicker(cleanupTickerInterval)
+	defer ticker.Stop()
 
-		ticker := time.NewTicker(cleanupTickerInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := r.cleanupDeadNodes(); err != nil {
-					r.logger.Error("Failed to cleanup dead nodes", "error", err)
-				}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := r.cleanupDeadNodes(); err != nil {
+				r.logger.Error("Failed to cleanup dead nodes", "error", err)
 			}
 		}
-	})
-
-	if wasAlreadyRun {
-		panic(fmt.Sprintf("%T.Run() called multiple times", r))
 	}
 }
 

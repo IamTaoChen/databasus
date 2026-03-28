@@ -197,7 +197,7 @@ func Test_CleanExceededBackups_WhenUnderStorageLimit_NoBackupsDeleted(t *testing
 	_, err := backups_config.GetBackupConfigService().SaveBackupConfig(backupConfig)
 	assert.NoError(t, err)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		backup := &backups_core.Backup{
 			ID:           uuid.New(),
 			DatabaseID:   database.ID,
@@ -263,7 +263,7 @@ func Test_CleanExceededBackups_WhenOverStorageLimit_DeletesOldestBackups(t *test
 	// Expect 2 oldest deleted, 3 remain (900 MB < 1024 MB)
 	now := time.Now().UTC()
 	var backupIDs []uuid.UUID
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		backup := &backups_core.Backup{
 			ID:           uuid.New(),
 			DatabaseID:   database.ID,
@@ -340,7 +340,7 @@ func Test_CleanExceededBackups_SkipsInProgressBackups(t *testing.T) {
 
 	// 3 completed at 500 MB each = 1500 MB, limit = 1 GB (1024 MB)
 	completedBackups := make([]*backups_core.Backup, 3)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		backup := &backups_core.Backup{
 			ID:           uuid.New(),
 			DatabaseID:   database.ID,
@@ -423,7 +423,7 @@ func Test_CleanExceededBackups_WithZeroStorageLimit_RemovesAllBackups(t *testing
 	_, err := backups_config.GetBackupConfigService().SaveBackupConfig(backupConfig)
 	assert.NoError(t, err)
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		backup := &backups_core.Backup{
 			ID:           uuid.New(),
 			DatabaseID:   database.ID,
@@ -555,7 +555,7 @@ func Test_CleanByCount_KeepsNewestNBackups_DeletesOlder(t *testing.T) {
 
 	now := time.Now().UTC()
 	var backupIDs []uuid.UUID
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		backup := &backups_core.Backup{
 			ID:           uuid.New(),
 			DatabaseID:   database.ID,
@@ -626,7 +626,7 @@ func Test_CleanByCount_WhenUnderLimit_NoBackupsDeleted(t *testing.T) {
 	_, err := backups_config.GetBackupConfigService().SaveBackupConfig(backupConfig)
 	assert.NoError(t, err)
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		backup := &backups_core.Backup{
 			ID:           uuid.New(),
 			DatabaseID:   database.ID,
@@ -686,7 +686,7 @@ func Test_CleanByCount_DoesNotDeleteInProgressBackups(t *testing.T) {
 
 	now := time.Now().UTC()
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		backup := &backups_core.Backup{
 			ID:           uuid.New(),
 			DatabaseID:   database.ID,
@@ -1064,7 +1064,7 @@ func Test_CleanExceededStorageBackups_WhenNonCloud_SkipsCleanup(t *testing.T) {
 
 	// 5 backups at 500 MB each = 2500 MB, would exceed 1 GB limit in cloud mode
 	now := time.Now().UTC()
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		backup := &backups_core.Backup{
 			ID:           uuid.New(),
 			DatabaseID:   database.ID,

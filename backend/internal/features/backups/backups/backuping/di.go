@@ -1,7 +1,6 @@
 package backuping
 
 import (
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -33,7 +32,6 @@ var backupCleaner = &BackupCleaner{
 	encryption.GetFieldEncryptor(),
 	logger.GetLogger(),
 	[]backups_core.BackupRemoveListener{},
-	sync.Once{},
 	atomic.Bool{},
 }
 
@@ -43,7 +41,6 @@ var backupNodesRegistry = &BackupNodesRegistry{
 	cache_utils.DefaultCacheTimeout,
 	cache_utils.NewPubSubManager(),
 	cache_utils.NewPubSubManager(),
-	sync.Once{},
 	atomic.Bool{},
 }
 
@@ -65,7 +62,6 @@ var backuperNode = &BackuperNode{
 	usecases.GetCreateBackupUsecase(),
 	getNodeID(),
 	time.Time{},
-	sync.Once{},
 	atomic.Bool{},
 }
 
@@ -80,7 +76,6 @@ var backupsScheduler = &BackupsScheduler{
 	logger.GetLogger(),
 	make(map[uuid.UUID]BackupToNodeRelation),
 	backuperNode,
-	sync.Once{},
 	atomic.Bool{},
 }
 

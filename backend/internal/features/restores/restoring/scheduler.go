@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -37,63 +36,56 @@ type RestoresScheduler struct {
 	cacheUtil                *cache_utils.CacheUtil[RestoreDatabaseCache]
 	completionSubscriptionID uuid.UUID
 
-	runOnce sync.Once
-	hasRun  atomic.Bool
+	hasRun atomic.Bool
 }
 
 func (s *RestoresScheduler) Run(ctx context.Context) {
-	wasAlreadyRun := s.hasRun.Load()
-
-	s.runOnce.Do(func() {
-		s.hasRun.Store(true)
-
-		s.lastCheckTime = time.Now().UTC()
-
-		if config.GetEnv().IsManyNodesMode {
-			// wait other nodes to start
-			time.Sleep(schedulerStartupDelay)
-		}
-
-		if err := s.failRestoresInProgress(); err != nil {
-			s.logger.Error("Failed to fail restores in progress", "error", err)
-			panic(err)
-		}
-
-		err := s.restoreNodesRegistry.SubscribeForRestoresCompletions(s.onRestoreCompleted)
-		if err != nil {
-			s.logger.Error("Failed to subscribe to restore completions", "error", err)
-			panic(err)
-		}
-
-		defer func() {
-			if err := s.restoreNodesRegistry.UnsubscribeForRestoresCompletions(); err != nil {
-				s.logger.Error("Failed to unsubscribe from restore completions", "error", err)
-			}
-		}()
-
-		if ctx.Err() != nil {
-			return
-		}
-
-		ticker := time.NewTicker(schedulerTickerInterval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := s.checkDeadNodesAndFailRestores(); err != nil {
-					s.logger.Error("Failed to check dead nodes and fail restores", "error", err)
-				}
-
-				s.lastCheckTime = time.Now().UTC()
-			}
-		}
-	})
-
-	if wasAlreadyRun {
+	if s.hasRun.Swap(true) {
 		panic(fmt.Sprintf("%T.Run() called multiple times", s))
+	}
+
+	s.lastCheckTime = time.Now().UTC()
+
+	if config.GetEnv().IsManyNodesMode {
+		// wait other nodes to start
+		time.Sleep(schedulerStartupDelay)
+	}
+
+	if err := s.failRestoresInProgress(); err != nil {
+		s.logger.Error("Failed to fail restores in progress", "error", err)
+		panic(err)
+	}
+
+	err := s.restoreNodesRegistry.SubscribeForRestoresCompletions(s.onRestoreCompleted)
+	if err != nil {
+		s.logger.Error("Failed to subscribe to restore completions", "error", err)
+		panic(err)
+	}
+
+	defer func() {
+		if err := s.restoreNodesRegistry.UnsubscribeForRestoresCompletions(); err != nil {
+			s.logger.Error("Failed to unsubscribe from restore completions", "error", err)
+		}
+	}()
+
+	if ctx.Err() != nil {
+		return
+	}
+
+	ticker := time.NewTicker(schedulerTickerInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := s.checkDeadNodesAndFailRestores(); err != nil {
+				s.logger.Error("Failed to check dead nodes and fail restores", "error", err)
+			}
+
+			s.lastCheckTime = time.Now().UTC()
+		}
 	}
 }
 

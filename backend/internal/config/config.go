@@ -142,13 +142,12 @@ type EnvVariables struct {
 	DatabasusURL string `env:"DATABASUS_URL"`
 }
 
-var (
-	env  EnvVariables
-	once sync.Once
-)
+var env EnvVariables
+
+var initEnv = sync.OnceFunc(loadEnvVariables)
 
 func GetEnv() *EnvVariables {
-	once.Do(loadEnvVariables)
+	initEnv()
 	return &env
 }
 

@@ -64,16 +64,12 @@ func (w *rotatingWriter) rotate() error {
 	return nil
 }
 
-var (
-	loggerInstance *slog.Logger
-	once           sync.Once
-)
+var loggerInstance *slog.Logger
+
+var initLogger = sync.OnceFunc(initialize)
 
 func GetLogger() *slog.Logger {
-	once.Do(func() {
-		initialize()
-	})
-
+	initLogger()
 	return loggerInstance
 }
 

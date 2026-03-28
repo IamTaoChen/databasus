@@ -20,6 +20,7 @@ This is NOT a strict set of rules, but a set of recommendations to help you writ
   - [Time handling](#time-handling)
   - [Logging](#logging)
   - [CRUD examples](#crud-examples)
+  - [Modern Go](#modern-go)
 - [Frontend guidelines](#frontend-guidelines)
   - [React component structure](#react-component-structure)
 
@@ -598,7 +599,7 @@ func GetOrderRepository() *repositories.OrderRepository {
 
 #### SetupDependencies() pattern
 
-**All `SetupDependencies()` functions must use sync.Once to ensure idempotent execution.**
+**All `SetupDependencies()` functions must use `sync.OnceFunc` to ensure idempotent execution.**
 
 This pattern allows `SetupDependencies()` to be safely called multiple times (especially in tests) while ensuring the actual setup logic executes only once.
 
@@ -609,45 +610,28 @@ package feature
 
 import (
     "sync"
-    "sync/atomic"
-    "databasus-backend/internal/util/logger"
 )
 
-var (
-    setupOnce sync.Once
-    isSetup   atomic.Bool
-)
-
-func SetupDependencies() {
-    wasAlreadySetup := isSetup.Load()
-
-    setupOnce.Do(func() {
-        // Initialize dependencies here
-        someService.SetDependency(otherService)
-        anotherService.AddListener(listener)
-
-        isSetup.Store(true)
-    })
-
-    if wasAlreadySetup {
-        logger.GetLogger().Warn("SetupDependencies called multiple times, ignoring subsequent call")
-    }
-}
+var SetupDependencies = sync.OnceFunc(func() {
+    // Initialize dependencies here
+    someService.SetDependency(otherService)
+    anotherService.AddListener(listener)
+})
 ```
 
 **Why this pattern:**
 
 - **Tests can call multiple times**: Test setup often calls `SetupDependencies()` multiple times without issues
 - **Thread-safe**: Works correctly with concurrent calls (nanoseconds or seconds apart)
-- **Idempotent**: Subsequent calls are safe, only log warning
+- **Idempotent**: Subsequent calls are no-ops
 - **No panics**: Does not break tests or production code on multiple calls
+- **Concise**: `sync.OnceFunc` (Go 1.21+) replaces the manual `sync.Once` + `atomic.Bool` + `Do()` boilerplate
 
 **Key Points:**
 
-1. Check `isSetup.Load()` **before** calling `Do()` to detect previous executions
-2. Set `isSetup.Store(true)` **inside** the `Do()` closure after setup completes
-3. Log warning if already setup (helps identify unnecessary duplicate calls)
-4. All setup logic must be inside the `Do()` closure
+1. Use `sync.OnceFunc` instead of manual `sync.Once` + `atomic.Bool` pattern
+2. All setup logic must be inside the `OnceFunc` closure
+3. The returned function is safe to call concurrently and multiple times
 
 ---
 
@@ -671,32 +655,25 @@ import (
 
 type BackgroundService struct {
     // ... existing fields ...
-    runOnce sync.Once
-    hasRun  atomic.Bool
+    hasRun atomic.Bool
 }
 
 func (s *BackgroundService) Run(ctx context.Context) {
-    wasAlreadyRun := s.hasRun.Load()
-
-    s.runOnce.Do(func() {
-        s.hasRun.Store(true)
-
-        // Existing infinite loop logic
-        ticker := time.NewTicker(1 * time.Minute)
-        defer ticker.Stop()
-
-        for {
-            select {
-            case <-ctx.Done():
-                return
-            case <-ticker.C:
-                s.doWork()
-            }
-        }
-    })
-
-    if wasAlreadyRun {
+    if s.hasRun.Swap(true) {
         panic(fmt.Sprintf("%T.Run() called multiple times", s))
+    }
+
+    // Existing infinite loop logic
+    ticker := time.NewTicker(1 * time.Minute)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case <-ticker.C:
+            s.doWork()
+        }
     }
 }
 ```
@@ -718,11 +695,9 @@ func (s *BackgroundService) Run(ctx context.Context) {
 
 **Key Points:**
 
-1. Check `hasRun.Load()` **before** calling `Do()` to detect previous executions
-2. Set `hasRun.Store(true)` **inside** the `Do()` closure before starting work
-3. **Always panic** if already run (never just log warning)
-4. All run logic must be inside the `Do()` closure
-5. This pattern is **thread-safe** for any timing (concurrent or sequential calls)
+1. Use `atomic.Bool.Swap(true)` to atomically check-and-set in one call — no need for `sync.Once`
+2. **Always panic** if already run (never just log warning)
+3. This pattern is **thread-safe** for any timing (concurrent or sequential calls)
 
 ---
 
@@ -1405,6 +1380,141 @@ func extractMessages(logs []*AuditLog) []string {
     }
     return messages
 }
+```
+
+---
+
+### Modern Go
+
+Prefer modern Go stdlib idioms over manual equivalents. Use these patterns consistently.
+
+#### `slices` package — avoid manual loops
+
+```go
+slices.Contains(items, x)                                      // instead of manual loop
+slices.Index(items, x)                                         // returns index or -1
+slices.IndexFunc(items, func(item T) bool { return item.ID == id })
+slices.SortFunc(items, func(a, b T) int { return cmp.Compare(a.X, b.X) })
+slices.Sort(items)                                             // for ordered types
+slices.Max(items) / slices.Min(items)                         // instead of manual loop
+slices.Reverse(items)                                          // in-place
+slices.Compact(items)                                          // remove consecutive duplicates
+slices.Clone(s)                                                // shallow copy
+slices.Clip(s)                                                 // trim unused capacity
+```
+
+#### `any` instead of `interface{}`
+
+```go
+// good
+func process(value any) {}
+
+// bad
+func process(value interface{}) {}
+```
+
+#### `sync.OnceFunc` / `sync.OnceValue`
+
+```go
+// instead of sync.Once + wrapper
+f := sync.OnceFunc(func() { initialize() })
+
+// compute-once getter
+getValue := sync.OnceValue(func() int { return expensiveComputation() })
+```
+
+#### `context` helpers
+
+```go
+stop := context.AfterFunc(ctx, cleanup)                                  // run cleanup on cancellation
+ctx, cancel := context.WithTimeoutCause(parent, d, ErrTimeout)           // timeout with cause
+ctx, cancel := context.WithDeadlineCause(parent, deadline, ErrDeadline)  // deadline with cause
+```
+
+#### Range over integer
+
+```go
+// good
+for i := range len(items) { ... }
+
+// bad
+for i := 0; i < len(items); i++ { ... }
+```
+
+#### `t.Context()` in tests
+
+Always use `t.Context()` — it cancels automatically when the test ends.
+
+```go
+// good
+func TestFoo(t *testing.T) {
+    ctx := t.Context()
+    result := doSomething(ctx)
+}
+
+// bad
+func TestFoo(t *testing.T) {
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    result := doSomething(ctx)
+}
+```
+
+#### `omitzero` instead of `omitempty`
+
+Use `omitzero` for `time.Duration`, `time.Time`, structs, slices, and maps — `omitempty` does not work correctly for these types.
+
+```go
+// good
+type Config struct {
+    Timeout   time.Duration `json:"timeout,omitzero"`
+    CreatedAt time.Time     `json:"createdAt,omitzero"`
+}
+
+// bad
+type Config struct {
+    Timeout   time.Duration `json:"timeout,omitempty"` // broken for Duration!
+    CreatedAt time.Time     `json:"createdAt,omitempty"`
+}
+```
+
+#### `wg.Go()` instead of `wg.Add(1)` + goroutine
+
+```go
+// good
+var wg sync.WaitGroup
+for _, item := range items {
+    wg.Go(func() { process(item) })
+}
+wg.Wait()
+
+// bad
+var wg sync.WaitGroup
+for _, item := range items {
+    wg.Add(1)
+    go func() {
+        defer wg.Done()
+        process(item)
+    }()
+}
+wg.Wait()
+```
+
+#### `new(val)` for pointer literals
+
+`new()` accepts expressions since Go 1.26 — avoids the temporary-variable pattern.
+
+```go
+// good
+cfg := Config{
+    Timeout: new(30),    // *int
+    Debug:   new(true),  // *bool
+}
+
+// bad
+timeout := 30
+debug := true
+cfg := Config{Timeout: &timeout, Debug: &debug}
 ```
 
 ---

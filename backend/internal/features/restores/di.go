@@ -2,7 +2,6 @@ package restores
 
 import (
 	"sync"
-	"sync/atomic"
 
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/backups/backups/backuping"
@@ -45,22 +44,7 @@ func GetRestoreController() *RestoreController {
 	return restoreController
 }
 
-var (
-	setupOnce sync.Once
-	isSetup   atomic.Bool
-)
-
-func SetupDependencies() {
-	wasAlreadySetup := isSetup.Load()
-
-	setupOnce.Do(func() {
-		backups_services.GetBackupService().AddBackupRemoveListener(restoreService)
-		backuping.GetBackupCleaner().AddBackupRemoveListener(restoreService)
-
-		isSetup.Store(true)
-	})
-
-	if wasAlreadySetup {
-		logger.GetLogger().Warn("SetupDependencies called multiple times, ignoring subsequent call")
-	}
-}
+var SetupDependencies = sync.OnceFunc(func() {
+	backups_services.GetBackupService().AddBackupRemoveListener(restoreService)
+	backuping.GetBackupCleaner().AddBackupRemoveListener(restoreService)
+})

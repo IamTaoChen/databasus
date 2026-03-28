@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -113,7 +113,7 @@ func (s *Streamer) listSegments() ([]string, error) {
 		segments = append(segments, name)
 	}
 
-	sort.Strings(segments)
+	slices.Sort(segments)
 
 	return segments, nil
 }

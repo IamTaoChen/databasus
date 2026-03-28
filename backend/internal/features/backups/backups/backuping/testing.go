@@ -3,7 +3,6 @@ package backuping
 import (
 	"context"
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -44,7 +43,6 @@ func CreateTestBackupCleaner(billingService BillingService) *BackupCleaner {
 		encryption.GetFieldEncryptor(),
 		logger.GetLogger(),
 		[]backups_core.BackupRemoveListener{},
-		sync.Once{},
 		atomic.Bool{},
 	}
 }
@@ -64,7 +62,6 @@ func CreateTestBackuperNode() *BackuperNode {
 		usecases.GetCreateBackupUsecase(),
 		uuid.New(),
 		time.Time{},
-		sync.Once{},
 		atomic.Bool{},
 	}
 }
@@ -84,7 +81,6 @@ func CreateTestBackuperNodeWithUseCase(useCase backups_core.CreateBackupUsecase)
 		useCase,
 		uuid.New(),
 		time.Time{},
-		sync.Once{},
 		atomic.Bool{},
 	}
 }
@@ -101,7 +97,6 @@ func CreateTestScheduler(billingService BillingService) *BackupsScheduler {
 		logger.GetLogger(),
 		make(map[uuid.UUID]BackupToNodeRelation),
 		CreateTestBackuperNode(),
-		sync.Once{},
 		atomic.Bool{},
 	}
 }

@@ -7,5 +7,5 @@ type TransferDatabaseRequest struct {
 	TargetStorageID         *uuid.UUID  `json:"targetStorageId,omitempty"`
 	IsTransferWithStorage   bool        `json:"isTransferWithStorage,omitempty"`
 	IsTransferWithNotifiers bool        `json:"isTransferWithNotifiers,omitempty"`
-	TargetNotifierIDs       []uuid.UUID `json:"targetNotifierIds,omitempty"`
+	TargetNotifierIDs       []uuid.UUID `json:"targetNotifierIds,omitzero"`
 }

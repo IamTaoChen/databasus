@@ -71,7 +71,7 @@ func Test_RunFullBackup_WhenChainBroken_BasebackupTriggered(t *testing.T) {
 	fb := newTestFullBackuper(server.URL)
 	fb.cmdBuilder = mockCmdBuilder(t, "test-backup-data", validStderr())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	go fb.Run(ctx)
@@ -124,7 +124,7 @@ func Test_RunFullBackup_WhenScheduledBackupDue_BasebackupTriggered(t *testing.T)
 	fb := newTestFullBackuper(server.URL)
 	fb.cmdBuilder = mockCmdBuilder(t, "scheduled-backup-data", validStderr())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	go fb.Run(ctx)
@@ -169,7 +169,7 @@ func Test_RunFullBackup_WhenNoFullBackupExists_ImmediateBasebackupTriggered(t *t
 	fb := newTestFullBackuper(server.URL)
 	fb.cmdBuilder = mockCmdBuilder(t, "first-backup-data", validStderr())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	go fb.Run(ctx)
@@ -233,7 +233,7 @@ func Test_RunFullBackup_WhenUploadFails_RetriesAfterDelay(t *testing.T) {
 	setRetryDelay(100 * time.Millisecond)
 	defer setRetryDelay(origRetryDelay)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
 	go fb.Run(ctx)
@@ -282,7 +282,7 @@ func Test_RunFullBackup_WhenAlreadyRunning_SkipsExecution(t *testing.T) {
 
 	fb.isRunning.Store(true)
 
-	fb.checkAndRunIfNeeded(context.Background())
+	fb.checkAndRunIfNeeded(t.Context())
 
 	mu.Lock()
 	count := uploadCount
@@ -318,7 +318,7 @@ func Test_RunFullBackup_WhenContextCancelled_StopsCleanly(t *testing.T) {
 	setRetryDelay(5 * time.Second)
 	defer setRetryDelay(origRetryDelay)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
 
 	done := make(chan struct{})
@@ -360,7 +360,7 @@ func Test_RunFullBackup_WhenChainValidAndNotScheduled_NoBasebackupTriggered(t *t
 	fb := newTestFullBackuper(server.URL)
 	fb.cmdBuilder = mockCmdBuilder(t, "data", validStderr())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
 	go fb.Run(ctx)
@@ -411,7 +411,7 @@ func Test_RunFullBackup_WhenStderrParsingFails_FinalizesWithErrorAndRetries(t *t
 	setRetryDelay(100 * time.Millisecond)
 	defer setRetryDelay(origRetryDelay)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
 	go fb.Run(ctx)
@@ -458,7 +458,7 @@ func Test_RunFullBackup_WhenNextBackupTimeNull_BasebackupTriggered(t *testing.T)
 	fb := newTestFullBackuper(server.URL)
 	fb.cmdBuilder = mockCmdBuilder(t, "first-run-data", validStderr())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	go fb.Run(ctx)
@@ -498,7 +498,7 @@ func Test_RunFullBackup_WhenChainValidityReturns401_NoBasebackupTriggered(t *tes
 	fb := newTestFullBackuper(server.URL)
 	fb.cmdBuilder = mockCmdBuilder(t, "data", validStderr())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
 	go fb.Run(ctx)
@@ -538,7 +538,7 @@ func Test_RunFullBackup_WhenUploadSucceeds_BodyIsZstdCompressed(t *testing.T) {
 	fb := newTestFullBackuper(server.URL)
 	fb.cmdBuilder = mockCmdBuilder(t, originalContent, validStderr())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	go fb.Run(ctx)

@@ -23,12 +23,12 @@ type Notifier struct {
 	LastSendError *string      `json:"lastSendError" gorm:"column:last_send_error;type:text"`
 
 	// specific notifier
-	TelegramNotifier *telegram_notifier.TelegramNotifier `json:"telegramNotifier"        gorm:"foreignKey:NotifierID"`
-	EmailNotifier    *email_notifier.EmailNotifier       `json:"emailNotifier"           gorm:"foreignKey:NotifierID"`
-	WebhookNotifier  *webhook_notifier.WebhookNotifier   `json:"webhookNotifier"         gorm:"foreignKey:NotifierID"`
-	SlackNotifier    *slack_notifier.SlackNotifier       `json:"slackNotifier"           gorm:"foreignKey:NotifierID"`
-	DiscordNotifier  *discord_notifier.DiscordNotifier   `json:"discordNotifier"         gorm:"foreignKey:NotifierID"`
-	TeamsNotifier    *teams_notifier.TeamsNotifier       `json:"teamsNotifier,omitempty" gorm:"foreignKey:NotifierID;constraint:OnDelete:CASCADE"`
+	TelegramNotifier *telegram_notifier.TelegramNotifier `json:"telegramNotifier"       gorm:"foreignKey:NotifierID"`
+	EmailNotifier    *email_notifier.EmailNotifier       `json:"emailNotifier"          gorm:"foreignKey:NotifierID"`
+	WebhookNotifier  *webhook_notifier.WebhookNotifier   `json:"webhookNotifier"        gorm:"foreignKey:NotifierID"`
+	SlackNotifier    *slack_notifier.SlackNotifier       `json:"slackNotifier"          gorm:"foreignKey:NotifierID"`
+	DiscordNotifier  *discord_notifier.DiscordNotifier   `json:"discordNotifier"        gorm:"foreignKey:NotifierID"`
+	TeamsNotifier    *teams_notifier.TeamsNotifier       `json:"teamsNotifier,omitzero" gorm:"foreignKey:NotifierID;constraint:OnDelete:CASCADE"`
 }
 
 func (n *Notifier) TableName() string {

@@ -1,7 +1,6 @@
 package mariadb
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -212,7 +211,7 @@ func Test_IsUserReadOnly_AdminUser_ReturnsFalse(t *testing.T) {
 
 			mariadbModel := createMariadbModel(container)
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			ctx := context.Background()
+			ctx := t.Context()
 
 			isReadOnly, privileges, err := mariadbModel.IsUserReadOnly(ctx, logger, nil, uuid.New())
 			assert.NoError(t, err)
@@ -241,7 +240,7 @@ func Test_IsUserReadOnly_ReadOnlyUser_ReturnsTrue(t *testing.T) {
 
 	mariadbModel := createMariadbModel(container)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	username, password, err := mariadbModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 	assert.NoError(t, err)
@@ -313,7 +312,7 @@ func Test_CreateReadOnlyUser_UserCanReadButNotWrite(t *testing.T) {
 
 			mariadbModel := createMariadbModel(container)
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			ctx := context.Background()
+			ctx := t.Context()
 
 			username, password, err := mariadbModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 			assert.NoError(t, err)
@@ -390,7 +389,7 @@ func Test_ReadOnlyUser_FutureTables_NoSelectPermission(t *testing.T) {
 
 	mariadbModel := createMariadbModel(container)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	username, password, err := mariadbModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 	assert.NoError(t, err)
@@ -466,7 +465,7 @@ func Test_CreateReadOnlyUser_DatabaseNameWithDash_Success(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	username, password, err := mariadbModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 	assert.NoError(t, err)
@@ -511,7 +510,7 @@ func Test_ReadOnlyUser_CannotDropOrAlterTables(t *testing.T) {
 
 	mariadbModel := createMariadbModel(container)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	username, password, err := mariadbModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 	assert.NoError(t, err)

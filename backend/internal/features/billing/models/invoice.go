@@ -15,7 +15,7 @@ type Invoice struct {
 	PeriodStart       time.Time     `json:"periodStart"       gorm:"column:period_start;type:timestamptz;not null"`
 	PeriodEnd         time.Time     `json:"periodEnd"         gorm:"column:period_end;type:timestamptz;not null"`
 	Status            InvoiceStatus `json:"status"            gorm:"column:status;type:text;not null"`
-	PaidAt            *time.Time    `json:"paidAt,omitempty"  gorm:"column:paid_at;type:timestamptz"`
+	PaidAt            *time.Time    `json:"paidAt,omitzero"   gorm:"column:paid_at;type:timestamptz"`
 	CreatedAt         time.Time     `json:"createdAt"         gorm:"column:created_at;type:timestamptz;not null"`
 }
 

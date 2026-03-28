@@ -12,10 +12,10 @@ import (
 )
 
 type RestoreDatabaseCache struct {
-	PostgresqlDatabase *postgresql.PostgresqlDatabase `json:"postgresqlDatabase,omitempty"`
-	MysqlDatabase      *mysql.MysqlDatabase           `json:"mysqlDatabase,omitempty"`
-	MariadbDatabase    *mariadb.MariadbDatabase       `json:"mariadbDatabase,omitempty"`
-	MongodbDatabase    *mongodb.MongodbDatabase       `json:"mongodbDatabase,omitempty"`
+	PostgresqlDatabase *postgresql.PostgresqlDatabase `json:"postgresqlDatabase,omitzero"`
+	MysqlDatabase      *mysql.MysqlDatabase           `json:"mysqlDatabase,omitzero"`
+	MariadbDatabase    *mariadb.MariadbDatabase       `json:"mariadbDatabase,omitzero"`
+	MongodbDatabase    *mongodb.MongodbDatabase       `json:"mongodbDatabase,omitzero"`
 }
 
 type RestoreToNodeRelation struct {

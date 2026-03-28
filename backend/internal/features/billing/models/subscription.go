@@ -16,11 +16,11 @@ type Subscription struct {
 	StorageGB        int  `json:"storageGb"                  gorm:"column:storage_gb;type:int;not null"`
 	PendingStorageGB *int `json:"pendingStorageGb,omitempty" gorm:"column:pending_storage_gb;type:int"`
 
-	CurrentPeriodStart time.Time  `json:"currentPeriodStart"   gorm:"column:current_period_start;type:timestamptz;not null"`
-	CurrentPeriodEnd   time.Time  `json:"currentPeriodEnd"     gorm:"column:current_period_end;type:timestamptz;not null"`
-	CanceledAt         *time.Time `json:"canceledAt,omitempty" gorm:"column:canceled_at;type:timestamptz"`
+	CurrentPeriodStart time.Time  `json:"currentPeriodStart"  gorm:"column:current_period_start;type:timestamptz;not null"`
+	CurrentPeriodEnd   time.Time  `json:"currentPeriodEnd"    gorm:"column:current_period_end;type:timestamptz;not null"`
+	CanceledAt         *time.Time `json:"canceledAt,omitzero" gorm:"column:canceled_at;type:timestamptz"`
 
-	DataRetentionGracePeriodUntil *time.Time `json:"dataRetentionGracePeriodUntil,omitempty" gorm:"column:data_retention_grace_period_until;type:timestamptz"`
+	DataRetentionGracePeriodUntil *time.Time `json:"dataRetentionGracePeriodUntil,omitzero" gorm:"column:data_retention_grace_period_until;type:timestamptz"`
 
 	ProviderName       *string `json:"providerName,omitempty"       gorm:"column:provider_name;type:text"`
 	ProviderSubID      *string `json:"providerSubId,omitempty"      gorm:"column:provider_sub_id;type:text"`

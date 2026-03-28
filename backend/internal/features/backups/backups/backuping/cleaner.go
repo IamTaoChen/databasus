@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -32,49 +31,42 @@ type BackupCleaner struct {
 	logger                *slog.Logger
 	backupRemoveListeners []backups_core.BackupRemoveListener
 
-	runOnce sync.Once
-	hasRun  atomic.Bool
+	hasRun atomic.Bool
 }
 
 func (c *BackupCleaner) Run(ctx context.Context) {
-	wasAlreadyRun := c.hasRun.Load()
+	if c.hasRun.Swap(true) {
+		panic(fmt.Sprintf("%T.Run() called multiple times", c))
+	}
 
-	c.runOnce.Do(func() {
-		c.hasRun.Store(true)
+	if ctx.Err() != nil {
+		return
+	}
 
-		if ctx.Err() != nil {
+	retentionLog := c.logger.With("task_name", "clean_by_retention_policy")
+	exceededLog := c.logger.With("task_name", "clean_exceeded_storage_backups")
+	staleLog := c.logger.With("task_name", "clean_stale_basebackups")
+
+	ticker := time.NewTicker(cleanerTickerInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
 			return
-		}
+		case <-ticker.C:
+			if err := c.cleanByRetentionPolicy(retentionLog); err != nil {
+				retentionLog.Error("failed to clean backups by retention policy", "error", err)
+			}
 
-		retentionLog := c.logger.With("task_name", "clean_by_retention_policy")
-		exceededLog := c.logger.With("task_name", "clean_exceeded_storage_backups")
-		staleLog := c.logger.With("task_name", "clean_stale_basebackups")
+			if err := c.cleanExceededStorageBackups(exceededLog); err != nil {
+				exceededLog.Error("failed to clean exceeded backups", "error", err)
+			}
 
-		ticker := time.NewTicker(cleanerTickerInterval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := c.cleanByRetentionPolicy(retentionLog); err != nil {
-					retentionLog.Error("failed to clean backups by retention policy", "error", err)
-				}
-
-				if err := c.cleanExceededStorageBackups(exceededLog); err != nil {
-					exceededLog.Error("failed to clean exceeded backups", "error", err)
-				}
-
-				if err := c.cleanStaleUploadedBasebackups(staleLog); err != nil {
-					staleLog.Error("failed to clean stale uploaded basebackups", "error", err)
-				}
+			if err := c.cleanStaleUploadedBasebackups(staleLog); err != nil {
+				staleLog.Error("failed to clean stale uploaded basebackups", "error", err)
 			}
 		}
-	})
-
-	if wasAlreadyRun {
-		panic(fmt.Sprintf("%T.Run() called multiple times", c))
 	}
 }
 

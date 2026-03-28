@@ -13,46 +13,46 @@ import (
 var (
 	paddleBillingService    *PaddleBillingService
 	paddleBillingController *PaddleBillingController
-	initOnce                sync.Once
 )
+
+var initPaddle = sync.OnceFunc(func() {
+	if config.GetEnv().IsPaddleSandbox {
+		paddleClient, err := paddle.NewSandbox(config.GetEnv().PaddleApiKey)
+		if err != nil {
+			return
+		}
+
+		paddleBillingService = &PaddleBillingService{
+			paddleClient,
+			paddle.NewWebhookVerifier(config.GetEnv().PaddleWebhookSecret),
+			config.GetEnv().PaddlePriceID,
+			billing_webhooks.WebhookRepository{},
+			billing.GetBillingService(),
+		}
+	} else {
+		paddleClient, err := paddle.New(config.GetEnv().PaddleApiKey)
+		if err != nil {
+			return
+		}
+
+		paddleBillingService = &PaddleBillingService{
+			paddleClient,
+			paddle.NewWebhookVerifier(config.GetEnv().PaddleWebhookSecret),
+			config.GetEnv().PaddlePriceID,
+			billing_webhooks.WebhookRepository{},
+			billing.GetBillingService(),
+		}
+	}
+
+	paddleBillingController = &PaddleBillingController{paddleBillingService}
+})
 
 func GetPaddleBillingService() *PaddleBillingService {
 	if !config.GetEnv().IsCloud {
 		return nil
 	}
 
-	initOnce.Do(func() {
-		if config.GetEnv().IsPaddleSandbox {
-			paddleClient, err := paddle.NewSandbox(config.GetEnv().PaddleApiKey)
-			if err != nil {
-				return
-			}
-
-			paddleBillingService = &PaddleBillingService{
-				paddleClient,
-				paddle.NewWebhookVerifier(config.GetEnv().PaddleWebhookSecret),
-				config.GetEnv().PaddlePriceID,
-				billing_webhooks.WebhookRepository{},
-				billing.GetBillingService(),
-			}
-		} else {
-			paddleClient, err := paddle.New(config.GetEnv().PaddleApiKey)
-			if err != nil {
-				return
-			}
-
-			paddleBillingService = &PaddleBillingService{
-				paddleClient,
-				paddle.NewWebhookVerifier(config.GetEnv().PaddleWebhookSecret),
-				config.GetEnv().PaddlePriceID,
-				billing_webhooks.WebhookRepository{},
-				billing.GetBillingService(),
-			}
-		}
-
-		paddleBillingController = &PaddleBillingController{paddleBillingService}
-	})
-
+	initPaddle()
 	return paddleBillingService
 }
 

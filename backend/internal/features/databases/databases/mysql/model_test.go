@@ -1,7 +1,6 @@
 package mysql
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -231,7 +230,7 @@ func Test_IsUserReadOnly_AdminUser_ReturnsFalse(t *testing.T) {
 
 			mysqlModel := createMysqlModel(container)
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			ctx := context.Background()
+			ctx := t.Context()
 
 			isReadOnly, privileges, err := mysqlModel.IsUserReadOnly(ctx, logger, nil, uuid.New())
 			assert.NoError(t, err)
@@ -260,7 +259,7 @@ func Test_IsUserReadOnly_ReadOnlyUser_ReturnsTrue(t *testing.T) {
 
 	mysqlModel := createMysqlModel(container)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	username, password, err := mysqlModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 	assert.NoError(t, err)
@@ -326,7 +325,7 @@ func Test_CreateReadOnlyUser_UserCanReadButNotWrite(t *testing.T) {
 
 			mysqlModel := createMysqlModel(container)
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			ctx := context.Background()
+			ctx := t.Context()
 
 			username, password, err := mysqlModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 			assert.NoError(t, err)
@@ -400,7 +399,7 @@ func Test_ReadOnlyUser_FutureTables_NoSelectPermission(t *testing.T) {
 
 	mysqlModel := createMysqlModel(container)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	username, password, err := mysqlModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 	assert.NoError(t, err)
@@ -477,7 +476,7 @@ func Test_CreateReadOnlyUser_DatabaseNameWithDash_Success(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	username, password, err := mysqlModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 	assert.NoError(t, err)
@@ -523,7 +522,7 @@ func Test_ReadOnlyUser_CannotDropOrAlterTables(t *testing.T) {
 
 	mysqlModel := createMysqlModel(container)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	username, password, err := mysqlModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
 	assert.NoError(t, err)

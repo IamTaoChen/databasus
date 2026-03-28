@@ -42,7 +42,7 @@ func Test_UploadSegment_SingleSegment_ServerReceivesCorrectHeadersAndBody(t *tes
 
 	streamer := newTestStreamer(walDir, server.URL)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
 	go streamer.Run(ctx)
@@ -79,7 +79,7 @@ func Test_UploadSegments_MultipleSegmentsOutOfOrder_UploadedInAscendingOrder(t *
 
 	streamer := newTestStreamer(walDir, server.URL)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
 	go streamer.Run(ctx)
@@ -115,7 +115,7 @@ func Test_UploadSegments_DirectoryHasTmpFiles_TmpFilesIgnored(t *testing.T) {
 
 	streamer := newTestStreamer(walDir, server.URL)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
 	go streamer.Run(ctx)
@@ -146,7 +146,7 @@ func Test_UploadSegment_DeleteEnabled_FileRemovedAfterUpload(t *testing.T) {
 	apiClient := api.NewClient(server.URL, cfg.Token, logger.GetLogger())
 	streamer := NewStreamer(cfg, apiClient, logger.GetLogger())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
 	go streamer.Run(ctx)
@@ -174,7 +174,7 @@ func Test_UploadSegment_DeleteDisabled_FileKeptAfterUpload(t *testing.T) {
 	apiClient := api.NewClient(server.URL, cfg.Token, logger.GetLogger())
 	streamer := NewStreamer(cfg, apiClient, logger.GetLogger())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
 	go streamer.Run(ctx)
@@ -199,7 +199,7 @@ func Test_UploadSegment_ServerReturns500_FileKeptInQueue(t *testing.T) {
 
 	streamer := newTestStreamer(walDir, server.URL)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
 	go streamer.Run(ctx)
@@ -223,7 +223,7 @@ func Test_ProcessQueue_EmptyDirectory_NoUploads(t *testing.T) {
 
 	streamer := newTestStreamer(walDir, server.URL)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
 	go streamer.Run(ctx)
@@ -238,7 +238,7 @@ func Test_Run_ContextCancelled_StopsImmediately(t *testing.T) {
 
 	streamer := newTestStreamer(walDir, "http://localhost:0")
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	done := make(chan struct{})
@@ -276,7 +276,7 @@ func Test_UploadSegment_ServerReturns409_FileNotDeleted(t *testing.T) {
 
 	streamer := newTestStreamer(walDir, server.URL)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
 	go streamer.Run(ctx)

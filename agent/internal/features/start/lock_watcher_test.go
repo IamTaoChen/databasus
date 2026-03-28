@@ -21,7 +21,7 @@ func Test_NewLockWatcher_CapturesInode(t *testing.T) {
 	require.NoError(t, err)
 	defer ReleaseLock(lockFile)
 
-	_, cancel := context.WithCancel(context.Background())
+	_, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	watcher, err := NewLockWatcher(lockFile, cancel, log)
@@ -37,7 +37,7 @@ func Test_LockWatcher_FileUnchanged_ContextNotCancelled(t *testing.T) {
 	require.NoError(t, err)
 	defer ReleaseLock(lockFile)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	watcher, err := NewLockWatcher(lockFile, cancel, log)
@@ -62,7 +62,7 @@ func Test_LockWatcher_FileDeleted_CancelsContext(t *testing.T) {
 	require.NoError(t, err)
 	defer ReleaseLock(lockFile)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	watcher, err := NewLockWatcher(lockFile, cancel, log)
@@ -88,7 +88,7 @@ func Test_LockWatcher_FileReplacedWithDifferentInode_CancelsContext(t *testing.T
 	require.NoError(t, err)
 	defer ReleaseLock(lockFile)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	watcher, err := NewLockWatcher(lockFile, cancel, log)

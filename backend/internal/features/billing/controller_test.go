@@ -584,7 +584,7 @@ func Test_GetInvoices_WithPagination_ReturnsCorrectPage(t *testing.T) {
 
 	sub := activateSubscriptionViaWebhook(t, router, owner.Token, db.ID, 50)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		invoiceID := fmt.Sprintf("inv-pag-%d-%s", i, uuid.New().String()[:8])
 		evt := makePaymentWebhookEvent(invoiceID, 50, int64(500+i*100))
 		err := billingService.RecordPaymentSuccess(log, sub, evt)

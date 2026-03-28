@@ -132,7 +132,7 @@ func testMongodbBackupRestoreForVersion(
 		t.Skipf("Skipping MongoDB %s test: %v", mongodbVersion, err)
 		return
 	}
-	defer container.Client.Disconnect(context.Background())
+	defer container.Client.Disconnect(t.Context())
 
 	setupMongodbTestData(t, container)
 
@@ -177,7 +177,7 @@ func testMongodbBackupRestoreForVersion(
 
 	verifyMongodbDataIntegrity(t, container, newDBName)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_ = container.Client.Database(newDBName).Drop(ctx)
 
 	err = os.Remove(filepath.Join(config.GetEnv().DataFolder, backup.ID.String()))
@@ -206,7 +206,7 @@ func testMongodbBackupRestoreWithEncryptionForVersion(
 		t.Skipf("Skipping MongoDB %s test: %v", mongodbVersion, err)
 		return
 	}
-	defer container.Client.Disconnect(context.Background())
+	defer container.Client.Disconnect(t.Context())
 
 	setupMongodbTestData(t, container)
 
@@ -256,7 +256,7 @@ func testMongodbBackupRestoreWithEncryptionForVersion(
 
 	verifyMongodbDataIntegrity(t, container, newDBName)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_ = container.Client.Database(newDBName).Drop(ctx)
 
 	err = os.Remove(filepath.Join(config.GetEnv().DataFolder, backup.ID.String()))
@@ -285,7 +285,7 @@ func testMongodbBackupRestoreWithReadOnlyUserForVersion(
 		t.Skipf("Skipping MongoDB %s test: %v", mongodbVersion, err)
 		return
 	}
-	defer container.Client.Disconnect(context.Background())
+	defer container.Client.Disconnect(t.Context())
 
 	setupMongodbTestData(t, container)
 
@@ -344,7 +344,7 @@ func testMongodbBackupRestoreWithReadOnlyUserForVersion(
 
 	verifyMongodbDataIntegrity(t, container, newDBName)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_ = container.Client.Database(newDBName).Drop(ctx)
 
 	dropMongodbUserSafe(container.Client, readOnlyUser.Username, container.AuthDatabase)
@@ -498,7 +498,7 @@ func waitForMongodbRestoreCompletion(
 }
 
 func verifyMongodbDataIntegrity(t *testing.T, container *MongodbContainer, restoredDBName string) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	originalCollection := container.Client.Database(container.Database).Collection("test_data")
 	restoredCollection := container.Client.Database(restoredDBName).Collection("test_data")
@@ -595,12 +595,12 @@ func connectToMongodbContainer(
 }
 
 func setupMongodbTestData(t *testing.T, container *MongodbContainer) {
-	ctx := context.Background()
+	ctx := t.Context()
 	collection := container.Client.Database(container.Database).Collection("test_data")
 
 	_ = collection.Drop(ctx)
 
-	testDocs := []interface{}{
+	testDocs := []any{
 		MongodbTestDataItem{
 			ID:        "1",
 			Name:      "test1",
