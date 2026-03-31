@@ -312,6 +312,8 @@ if [ "\$CURRENT_UID" != "\$PUID" ]; then
     usermod -o -u "\$PUID" postgres
 fi
 
+chown -R postgres:postgres /var/run/postgresql
+
 # PostgreSQL 17 binary paths
 PG_BIN="/usr/lib/postgresql/17/bin"
 
