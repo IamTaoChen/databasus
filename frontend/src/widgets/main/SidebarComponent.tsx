@@ -211,7 +211,7 @@ export const SidebarComponent = ({
                 target="_blank"
                 rel="noreferrer"
               >
-                Cloud (from $9)
+                Cloud
               </a>
             )}
 

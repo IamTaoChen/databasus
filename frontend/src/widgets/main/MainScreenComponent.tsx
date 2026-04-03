@@ -232,12 +232,12 @@ export const MainScreenComponent = () => {
 
           {!IS_CLOUD && (
             <a
-              className="!text-black !underline !decoration-blue-600 !decoration-2 underline-offset-2 hover:opacity-80 dark:!text-gray-200"
+              className="!text-black hover:opacity-80 dark:!text-gray-200"
               href="https://databasus.com/cloud"
               target="_blank"
               rel="noreferrer"
             >
-              Cloud (from $9)
+              Cloud
             </a>
           )}
 

@@ -558,7 +558,7 @@ export const BackupsComponent = ({
       <div className="mt-5" />
 
       {database.postgresql?.backupType !== PostgresBackupType.WAL_V1 && (
-        <div className="flex">
+        <div className="flex items-center">
           <Button
             onClick={makeBackup}
             className="mr-1"
@@ -569,6 +569,17 @@ export const BackupsComponent = ({
             <span className="md:hidden">Backup now</span>
             <span className="hidden md:inline">Make backup right now</span>
           </Button>
+
+          {!IS_CLOUD && (
+            <a
+              href="https://databasus.com/cloud"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-8 items-center rounded-md border border-blue-600 px-[15px] text-sm leading-none transition-colors hover:bg-blue-50 dark:!text-white dark:hover:bg-blue-900/30"
+            >
+              Get 24x7 uptime and 2x independent backups copy
+            </a>
+          )}
         </div>
       )}
 
