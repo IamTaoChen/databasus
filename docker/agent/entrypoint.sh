@@ -107,7 +107,7 @@ log_info "Starting databasus agent..."
     --pg-user="${PG_BACKUPER_USER}" \
     --pg-password="${PG_BACKUPER_PASSWORD}" \
     --pg-wal-dir="${PG_WAL_DIR}" \
-    -skip-update
+    --skip-update
 
 sleep 1
 
