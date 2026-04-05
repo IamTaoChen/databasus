@@ -1,0 +1,32 @@
+
+services:
+  databasus:
+    build: 
+      context: ./
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    network_mode: service:postgres # this should be nessary to access the postgres container on localhost
+    environment:
+      PG_BACKUPER_USER: 
+      DATABASUS_DB_ID: 
+      DATABASUS_TOKEN_FILE: /run/secrets/DATABASUS_TOKEN
+      PG_BACKUPER_PASSWORD_FILE: /run/secrets/PG_PASSWORD
+      DATABASUS_HOST: https://app.databasus.com:443
+      PG_HOST: localhost
+      PG_PORT: 5432
+      PG_WAL_DIR: /opt/databasus/wal-queue
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - wal-queue:/opt/databasus/wal-queue
+    secrets:
+      - PG_PASSWORD
+      - DATABASUS_TOKEN
+
+secrets:
+  PG_PASSWORD:
+    file: ./secrets/PG_PASSWORD
+  DATABASUS_TOKEN:
+    file: ./secrets/DATABASUS_TOKEN
+
+volumes:
+  wal-queue:
