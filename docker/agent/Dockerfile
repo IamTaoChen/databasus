@@ -14,26 +14,17 @@ RUN set -e; \
 # ------------------------
 # Runtime
 # ------------------------
-FROM debian:13-slim
+FROM alpine/psql:latest
 
 WORKDIR /opt/databasus
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    postgresql-client \
-    tini \
- && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache ca-certificates tini
 
 COPY --from=downloader /tmp/agent /opt/databasus/agent
 RUN chmod +x /opt/databasus/agent
 
-# ✅ entrypoint
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# ------------------------
-# Env
-# ------------------------
 ENV DATABASUS_HOST=https://app.databasus.com:443
 ENV DATABASUS_DB_ID=
 ENV DATABASUS_TOKEN=
@@ -45,4 +36,4 @@ ENV PG_PORT=5432
 
 VOLUME ["/opt/databasus/wal-queue"]
 
-ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]
+ENTRYPOINT ["tini", "--", "/entrypoint.sh"]
